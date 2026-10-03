@@ -231,6 +231,25 @@ export function AccountPage() {
 
     setAddingPasskey(true);
     try {
+      // The passkey settings form is pre-filled from this page's address; if they were never
+      // saved, save them now so adding a passkey is a single step.
+      if (!account?.passkey_rp_id) {
+        const origins = originsText
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const releaseUnauthorizedSuspend = apiClient.suspendUnauthorizedHandling();
+        try {
+          const saved = await accountApi.savePasskeySettings({
+            rp_id: rpId.trim(),
+            origins,
+            ...(requiresCurrentPassword ? { current_password: addPasskeyPassword } : {}),
+          });
+          setAccount(saved);
+        } finally {
+          releaseUnauthorizedSuspend();
+        }
+      }
       const begin = await accountApi.passkeysBegin(
         requiresCurrentPassword ? { current_password: addPasskeyPassword } : undefined
       );
@@ -272,7 +291,15 @@ export function AccountPage() {
     } finally {
       setAddingPasskey(false);
     }
-  }, [addPasskeyPassword, requiresCurrentPassword, showNotification, t]);
+  }, [
+    account?.passkey_rp_id,
+    addPasskeyPassword,
+    originsText,
+    requiresCurrentPassword,
+    rpId,
+    showNotification,
+    t,
+  ]);
 
   const handleRenamePasskey = useCallback(
     async (passkey: AccountPasskey) => {
@@ -367,8 +394,15 @@ export function AccountPage() {
     });
   }, [authMode, logout, navigate, showConfirmation, showNotification, t]);
 
-  const passkeysAvailable = Boolean(account?.passkey_rp_id) && account?.configured;
-  const canAddPasskey = passkeysAvailable && supportsPasskeys();
+  // Unsaved settings are fine: handleAddPasskey saves the pre-filled rp id first.
+  const browserSupportsPasskeys = supportsPasskeys();
+  const canAddPasskey =
+    Boolean(account?.configured) &&
+    Boolean(account?.passkey_rp_id || rpId.trim()) &&
+    browserSupportsPasskeys;
+  const addPasskeyBlockedHint = !browserSupportsPasskeys
+    ? t('account.passkeys_need_https_hint')
+    : t('account.passkeys_unavailable_hint');
 
   if (!loadingAccount && loadError) {
     return (
@@ -518,11 +552,12 @@ export function AccountPage() {
                   onClick={handleAddPasskey}
                   loading={addingPasskey}
                   disabled={!canAddPasskey}
-                  title={canAddPasskey ? undefined : t('account.passkeys_unavailable_hint')}
+                  title={canAddPasskey ? undefined : addPasskeyBlockedHint}
                 >
                   {t('account.add_passkey_button')}
                 </Button>
               </div>
+              {!canAddPasskey && <div className="hint">{addPasskeyBlockedHint}</div>}
               {account.passkeys.length === 0 ? (
                 <div className="hint">{t('account.no_passkeys')}</div>
               ) : (

@@ -296,10 +296,12 @@ export function OAuthPage() {
   useEffect(() => {
     // Invalidate synchronously on connection changes, including a new key on
     // the same server. Never send cleanup requests through the new connection.
+    // `identityVersion`, not `managementKey`: a sliding session-token refresh must not look
+    // like a changed connection.
     const unsubscribe = useAuthStore.subscribe((current, previous) => {
       if (
         current.apiBase !== previous.apiBase ||
-        current.managementKey !== previous.managementKey ||
+        current.identityVersion !== previous.identityVersion ||
         current.isAuthenticated !== previous.isAuthenticated
       ) {
         clearTimers();

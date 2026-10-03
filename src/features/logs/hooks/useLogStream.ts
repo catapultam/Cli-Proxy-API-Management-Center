@@ -50,7 +50,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
   const { showNotification, showConfirmation } = useNotificationStore();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
-  const managementKey = useAuthStore((state) => state.managementKey);
+  const identityVersion = useAuthStore((state) => state.identityVersion);
   const loggingToFileEnabled = useConfigStore((state) => state.config?.loggingToFile ?? false);
   const cpaNeedsFileLogging = !loggingToFileEnabled;
   const [fileLoggingRequired, setFileLoggingRequired] = useState(false);
@@ -219,10 +219,12 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
       requests.logs.invalidate();
     };
     // Invalidate at store notification time, not after React commits a new render.
+    // `identityVersion`, not `managementKey`: a sliding session-token refresh must not look like
+    // a changed connection.
     const unsubscribeAuth = useAuthStore.subscribe((next, previous) => {
       if (
         next.apiBase === previous.apiBase &&
-        next.managementKey === previous.managementKey &&
+        next.identityVersion === previous.identityVersion &&
         next.connectionStatus === previous.connectionStatus &&
         next.isAuthenticated === previous.isAuthenticated
       )
@@ -247,7 +249,7 @@ export function useLogStream({ active, isFollowing, onFollow }: LogStreamOptions
       loadLogs(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionStatus, apiBase, managementKey, loggingToFileEnabled]);
+  }, [connectionStatus, apiBase, identityVersion, loggingToFileEnabled]);
 
   useEffect(() => {
     if (!autoRefresh || !active || connectionStatus !== 'connected' || showFileLoggingRequired) {

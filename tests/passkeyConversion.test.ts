@@ -4,6 +4,7 @@ import {
   assertionOptionsFromJSON,
   base64UrlToArrayBuffer,
   creationOptionsFromJSON,
+  credentialToJSON,
   guessDeviceName,
   supportsPasskeys,
 } from '@/services/passkey';
@@ -153,5 +154,120 @@ describe('manual options fallback (no PublicKeyCredential.parse*FromJSON)', () =
       (publicKey.excludeCredentials as PublicKeyCredentialDescriptor[])[0].id as ArrayBuffer
     );
     expect(decodedExcludedId).toEqual(excludedIdBytes);
+  });
+});
+
+describe('credentialToJSON', () => {
+  test('uses credential.toJSON() when the browser provides it', () => {
+    const native = { toJSON: () => ({ id: 'native', fromToJSON: true }) };
+    expect(credentialToJSON(native as unknown as PublicKeyCredential)).toEqual({
+      id: 'native',
+      fromToJSON: true,
+    });
+  });
+
+  test('manual fallback: registration (attestation) response', () => {
+    const rawId = new Uint8Array([1, 2, 3]);
+    const clientDataJSON = new Uint8Array([4, 5]);
+    const attestationObject = new Uint8Array([6, 7, 8]);
+    const credential = {
+      id: 'credential-id',
+      rawId: rawId.buffer,
+      type: 'public-key',
+      getClientExtensionResults: () => ({ credProps: { rk: true } }),
+      response: {
+        clientDataJSON: clientDataJSON.buffer,
+        attestationObject: attestationObject.buffer,
+        getTransports: () => ['internal', 'hybrid'],
+      },
+    };
+
+    const json = credentialToJSON(credential as unknown as PublicKeyCredential);
+
+    expect(json.id).toBe('credential-id');
+    expect(json.rawId).toBe(arrayBufferToBase64Url(rawId.buffer));
+    expect(json.type).toBe('public-key');
+    expect(json.clientExtensionResults).toEqual({ credProps: { rk: true } });
+    expect(json.response).toEqual({
+      clientDataJSON: arrayBufferToBase64Url(clientDataJSON.buffer),
+      attestationObject: arrayBufferToBase64Url(attestationObject.buffer),
+      transports: ['internal', 'hybrid'],
+    });
+  });
+
+  test('manual fallback: registration response without getTransports', () => {
+    const credential = {
+      id: 'credential-id',
+      rawId: new Uint8Array([1]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([2]).buffer,
+        attestationObject: new Uint8Array([3]).buffer,
+      },
+    };
+
+    const json = credentialToJSON(credential as unknown as PublicKeyCredential);
+    expect((json.response as { transports?: unknown }).transports).toBeUndefined();
+  });
+
+  test('manual fallback: login (assertion) response with a userHandle', () => {
+    const rawId = new Uint8Array([9, 9]);
+    const clientDataJSON = new Uint8Array([1]);
+    const authenticatorData = new Uint8Array([2, 2]);
+    const signature = new Uint8Array([3, 3, 3]);
+    const userHandle = new Uint8Array([4, 4, 4, 4]);
+    const credential = {
+      id: 'assertion-id',
+      rawId: rawId.buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: clientDataJSON.buffer,
+        authenticatorData: authenticatorData.buffer,
+        signature: signature.buffer,
+        userHandle: userHandle.buffer,
+      },
+    };
+
+    const json = credentialToJSON(credential as unknown as PublicKeyCredential);
+
+    expect(json.rawId).toBe(arrayBufferToBase64Url(rawId.buffer));
+    expect(json.response).toEqual({
+      clientDataJSON: arrayBufferToBase64Url(clientDataJSON.buffer),
+      authenticatorData: arrayBufferToBase64Url(authenticatorData.buffer),
+      signature: arrayBufferToBase64Url(signature.buffer),
+      userHandle: arrayBufferToBase64Url(userHandle.buffer),
+    });
+  });
+
+  test('manual fallback: login response with no discoverable userHandle', () => {
+    const credential = {
+      id: 'assertion-id',
+      rawId: new Uint8Array([1]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([2]).buffer,
+        authenticatorData: new Uint8Array([3]).buffer,
+        signature: new Uint8Array([4]).buffer,
+        userHandle: null,
+      },
+    };
+
+    const json = credentialToJSON(credential as unknown as PublicKeyCredential);
+    expect((json.response as { userHandle: unknown }).userHandle).toBeNull();
+  });
+
+  test('manual fallback: missing getClientExtensionResults defaults to an empty object', () => {
+    const credential = {
+      id: 'credential-id',
+      rawId: new Uint8Array([1]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([2]).buffer,
+        attestationObject: new Uint8Array([3]).buffer,
+      },
+    };
+
+    const json = credentialToJSON(credential as unknown as PublicKeyCredential);
+    expect(json.clientExtensionResults).toEqual({});
   });
 });

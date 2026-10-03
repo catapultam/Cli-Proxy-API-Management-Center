@@ -166,8 +166,10 @@ export function SystemPage() {
       message: t('system_info.clear_login_confirm'),
       variant: 'danger',
       confirmText: t('common.confirm'),
-      onConfirm: () => {
-        auth.logout();
+      onConfirm: async () => {
+        // Await so the store's own (zustand-persisted) cleanup write lands before we remove the
+        // keys below; otherwise that write could race back in after our manual removal.
+        await auth.logout();
         if (typeof localStorage === 'undefined') return;
         const keysToRemove = [STORAGE_KEY_AUTH, 'isLoggedIn', 'apiBase', 'apiUrl', 'managementKey'];
         keysToRemove.forEach((key) => localStorage.removeItem(key));

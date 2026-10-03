@@ -29,7 +29,6 @@ export interface AuthState {
   supportsPlugin: boolean;
   authMode: AuthMode;
   sessionTransport: SessionTransport;
-  sessionExpiresAt: string | null;
   loginMethod: SessionLoginMethod;
 }
 
@@ -42,7 +41,9 @@ export interface SessionStatus {
   authenticated: boolean;
   method: SessionLoginMethod;
   passkeys_available: boolean;
+  /** The effective allow-list (defaults to `["https://" + passkey_rp_id]` when unset server-side). */
   passkey_origins: string[];
+  passkey_rp_id: string;
 }
 
 // Session response returned by login/passkey-finish/account PUT

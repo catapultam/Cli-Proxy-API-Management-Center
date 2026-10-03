@@ -26,11 +26,12 @@ async function sessionRequest<T>(
   options: SessionRequestOptions = {}
 ): Promise<T> {
   try {
+    // The backend's CORS policy is ACAO `*` without Allow-Credentials: never set
+    // `withCredentials` here. A same-origin request sends the `cpa_mgmt_session` cookie anyway.
     const response = await axios.request<T>({
       method,
       url: `${computeApiUrl(apiBase)}${SESSION_PATH}${path}`,
       data: options.data,
-      withCredentials: true,
       headers: options.bearerToken ? { Authorization: `Bearer ${options.bearerToken}` } : undefined,
     });
     return response.data;

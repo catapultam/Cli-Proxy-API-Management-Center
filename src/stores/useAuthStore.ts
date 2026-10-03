@@ -36,6 +36,14 @@ interface AuthStoreState extends AuthState {
    * show. `null` means the endpoint is unavailable (old backend) or has not been checked yet.
    */
   sessionStatus: SessionStatus | null;
+  /**
+   * Bumped only when the *identity* behind the connection actually changes (a new login, a
+   * restored session, or a logout) — never by a sliding-session token refresh. Callers that need
+   * to detect "did the logged-in party change under me" (stale-request guards, per-identity
+   * caches) should compare this instead of `managementKey`, which now also changes on a refresh
+   * that still represents the same session.
+   */
+  identityVersion: number;
 
   // 操作
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -59,17 +67,38 @@ interface AuthStoreState extends AuthState {
 
 let restoreSessionPromise: Promise<boolean> | null = null;
 
-/** Fetches session status without ever throwing; `null` means unavailable (e.g. old backend). */
+type SessionStatusProbe =
+  | { kind: 'ok'; status: SessionStatus }
+  | { kind: 'not-found' } // 404: an old backend with no session routes at all.
+  | { kind: 'error' }; // network failure, 5xx, or anything else inconclusive.
+
+/**
+ * Probes `session/status` without ever throwing, distinguishing a definitive answer (200, or a
+ * 404 meaning "this backend has no session support") from an inconclusive one (network error,
+ * 5xx, timeout). Callers must only persist an identity change on a definitive answer; an
+ * inconclusive probe must leave the stored auth mode and token untouched so a retry can succeed.
+ */
+async function probeSessionStatus(
+  apiBase: string,
+  bearerToken?: string
+): Promise<SessionStatusProbe> {
+  if (!apiBase) return { kind: 'error' };
+  try {
+    const status = await sessionApi.getStatus(apiBase, bearerToken);
+    return { kind: 'ok', status };
+  } catch (error) {
+    if ((error as { status?: number })?.status === 404) return { kind: 'not-found' };
+    return { kind: 'error' };
+  }
+}
+
+/** Thin wrapper for call sites (e.g. the Advanced apiBase field) that only need the status or null. */
 async function fetchSessionStatusSafely(
   apiBase: string,
   bearerToken?: string
 ): Promise<SessionStatus | null> {
-  if (!apiBase) return null;
-  try {
-    return await sessionApi.getStatus(apiBase, bearerToken);
-  } catch {
-    return null;
-  }
+  const probe = await probeSessionStatus(apiBase, bearerToken);
+  return probe.kind === 'ok' ? probe.status : null;
 }
 
 export const useAuthStore = create<AuthStoreState>()(
@@ -86,9 +115,9 @@ export const useAuthStore = create<AuthStoreState>()(
       connectionStatus: 'disconnected',
       authMode: 'key',
       sessionTransport: 'bearer',
-      sessionExpiresAt: null,
       loginMethod: '',
       sessionStatus: null,
+      identityVersion: 0,
 
       // 恢复会话并自动登录
       restoreSession: () => {
@@ -115,42 +144,58 @@ export const useAuthStore = create<AuthStoreState>()(
             previousAuthMode === 'session' && sessionTransport === 'bearer'
               ? managementKey
               : undefined;
-          const status = await fetchSessionStatusSafely(resolvedBase, bearerToken);
-          set({ apiBase: resolvedBase, sessionStatus: status });
+          const probe = await probeSessionStatus(resolvedBase, bearerToken);
+          set({ apiBase: resolvedBase });
 
-          if (status?.authenticated) {
-            const transport: SessionTransport = isSameOriginAsPage(resolvedBase)
-              ? 'cookie'
-              : 'bearer';
-            const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
-            apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
-            set({
-              isAuthenticated: true,
-              apiBase: resolvedBase,
-              managementKey: tokenForClient,
-              authMode: 'session',
-              sessionTransport: transport,
-              loginMethod: status.method,
-              connectionStatus: 'connected',
-            });
-            return true;
-          }
+          if (probe.kind === 'error') {
+            // Inconclusive (network error, 5xx, timeout): never mutate the persisted identity on
+            // a guess, and never cache this failed attempt so the next call can retry for real.
+            restoreSessionPromise = null;
+            if (previousAuthMode === 'session') {
+              return false;
+            }
+            // Key-mode (the default/common case) falls through to the unchanged legacy flow
+            // below, matching today's resilience: a transient probe failure must not block a
+            // login that would otherwise succeed with an already-known-good management key.
+          } else {
+            set({ sessionStatus: probe.kind === 'ok' ? probe.status : null });
 
-          if (previousAuthMode === 'session') {
-            // The remembered session is gone (expired, revoked, or the backend no longer
-            // supports sessions). `managementKey` here is a session token, not a real
-            // management key, so it must never be retried against the legacy key flow below.
-            apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
-            set({
-              isAuthenticated: false,
-              managementKey: '',
-              authMode: 'key',
-              sessionTransport: 'bearer',
-              sessionExpiresAt: null,
-              loginMethod: '',
-              connectionStatus: 'disconnected',
-            });
-            return false;
+            if (probe.kind === 'ok' && probe.status.authenticated) {
+              const transport: SessionTransport = isSameOriginAsPage(resolvedBase)
+                ? 'cookie'
+                : 'bearer';
+              const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
+              apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
+              set({
+                isAuthenticated: true,
+                apiBase: resolvedBase,
+                managementKey: tokenForClient,
+                authMode: 'session',
+                sessionTransport: transport,
+                loginMethod: probe.status.method,
+                connectionStatus: 'connected',
+                identityVersion: get().identityVersion + 1,
+              });
+              return true;
+            }
+
+            if (previousAuthMode === 'session') {
+              // A definitive answer (200 authenticated:false, or 404 meaning the backend no
+              // longer exposes session routes at all): the remembered session is confirmed gone.
+              // `managementKey` here is a session token, not a real management key, so it must
+              // never be retried against the legacy key flow below.
+              apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
+              set({
+                isAuthenticated: false,
+                managementKey: '',
+                authMode: 'key',
+                sessionTransport: 'bearer',
+                loginMethod: '',
+                connectionStatus: 'disconnected',
+                identityVersion: get().identityVersion + 1,
+              });
+              return false;
+            }
           }
 
           // Legacy remembered-key auto-login (unchanged behavior).
@@ -240,9 +285,9 @@ export const useAuthStore = create<AuthStoreState>()(
             rememberPassword,
             authMode: 'key',
             sessionTransport: 'bearer',
-            sessionExpiresAt: null,
             loginMethod: 'key',
             connectionStatus: 'connected',
+            identityVersion: get().identityVersion + 1,
           });
           if (rememberPassword) {
             localStorage.setItem('isLoggedIn', 'true');
@@ -288,9 +333,9 @@ export const useAuthStore = create<AuthStoreState>()(
           rememberPassword: true,
           authMode: 'session',
           sessionTransport: transport,
-          sessionExpiresAt: response.expires_at,
           loginMethod: method,
           connectionStatus: 'connected',
+          identityVersion: get().identityVersion + 1,
         });
         localStorage.setItem('isLoggedIn', 'true');
       },
@@ -322,9 +367,9 @@ export const useAuthStore = create<AuthStoreState>()(
           connectionStatus: 'disconnected',
           authMode: 'key',
           sessionTransport: 'bearer',
-          sessionExpiresAt: null,
           loginMethod: '',
           sessionStatus: null,
+          identityVersion: get().identityVersion + 1,
         });
         localStorage.removeItem('isLoggedIn');
       },
@@ -410,7 +455,9 @@ export function handleSessionRefreshToken(token: string | null | undefined): voi
   if (!token) return;
   const state = useAuthStore.getState();
   if (state.authMode !== 'session' || state.sessionTransport !== 'bearer') return;
-  apiClient.setConfig({ apiBase: state.apiBase, managementKey: token });
+  // `setToken` (not `setConfig`) deliberately: this is the same identity renewing its token, not
+  // a new connection, so in-flight requests guarded by `getConnectionRevision()` must not abort.
+  apiClient.setToken(token);
   useAuthStore.setState({ managementKey: token });
 }
 

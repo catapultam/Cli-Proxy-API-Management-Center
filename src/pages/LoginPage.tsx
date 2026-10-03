@@ -14,9 +14,22 @@ import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection'
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
-import type { ApiError } from '@/types';
+import type { ApiError, SessionStatus } from '@/types';
 import { LegacyBackendError } from '@/services/api/legacyBackendProbe';
 import styles from './LoginPage.module.scss';
+
+/** Session bearer tokens always start with this prefix; a real management key never does. */
+const isSessionToken = (value: string): boolean => value.startsWith('cpas_');
+
+/**
+ * `passkey_origins` is the backend's already-effective list (it defaults to
+ * `https://<rp-id>` server-side), but stay robust to an empty list anyway.
+ */
+function effectivePasskeyOrigins(status: SessionStatus | null): string[] {
+  if (!status) return [];
+  if (status.passkey_origins.length > 0) return status.passkey_origins;
+  return status.passkey_rp_id ? [`https://${status.passkey_rp_id}`] : [];
+}
 
 /**
  * 将 API 错误转换为本地化的用户友好消息
@@ -114,9 +127,6 @@ export function LoginPage() {
   const restoreSession = useAuthStore((state) => state.restoreSession);
   const refreshSessionStatus = useAuthStore((state) => state.refreshSessionStatus);
   const sessionStatus = useAuthStore((state) => state.sessionStatus);
-  const storedBase = useAuthStore((state) => state.apiBase);
-  const storedKey = useAuthStore((state) => state.managementKey);
-  const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
@@ -165,9 +175,18 @@ export function LoginPage() {
             navigate(redirect, { replace: true });
           }, 1500);
         } else {
-          setApiBase(storedBase || detectedBase);
-          setManagementKey(storedKey || '');
-          setRememberPassword(storedRememberPassword || Boolean(storedKey));
+          // Read fresh state, not the values captured when this effect was created: restoreSession
+          // may have just mutated apiBase/managementKey/authMode (e.g. clearing a stale session).
+          const state = useAuthStore.getState();
+          setApiBase(state.apiBase || detectedBase);
+          // Never prefill the key field with a session bearer token: it is not a management key
+          // and must not be submittable as one, whether or not it was cleared above.
+          const safeKey =
+            state.authMode === 'session' || isSessionToken(state.managementKey)
+              ? ''
+              : state.managementKey;
+          setManagementKey(safeKey);
+          setRememberPassword(state.rememberPassword || Boolean(safeKey));
         }
       } finally {
         // 自动登录成功时 showSplash 仍由 autoLoginSuccess 维持，可无条件结束 loading
@@ -212,7 +231,7 @@ export function LoginPage() {
     Boolean(sessionStatus?.passkeys_available) &&
     supportsPasskeys() &&
     typeof window !== 'undefined' &&
-    (sessionStatus?.passkey_origins ?? []).includes(window.location.origin);
+    effectivePasskeyOrigins(sessionStatus).includes(window.location.origin);
 
   const handlePasswordSubmit = useCallback(async () => {
     if (!username.trim() || !password) {
@@ -227,7 +246,13 @@ export function LoginPage() {
       navigate('/', { replace: true });
     } catch (err: unknown) {
       const seconds = readRetryAfterSeconds(err);
-      if (seconds) startRetryCountdown(seconds);
+      if (seconds) {
+        // Own branch: the inline countdown already says everything useful here, so don't also
+        // show the generic error box or a redundant toast.
+        startRetryCountdown(seconds);
+        setError('');
+        return;
+      }
       const message = getLocalizedErrorMessage(err, t);
       setError(message);
       showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
@@ -269,6 +294,13 @@ export function LoginPage() {
         (err.name === 'NotAllowedError' || err.name === 'AbortError')
       ) {
         setError(t('login.error_passkey_cancelled'));
+      } else if ((err as Partial<ApiError>)?.status === 409) {
+        // Only `passkey/begin` can 409 in this flow, and it means passkeys are unavailable here
+        // (no rp-id/no passkeys registered) — not "no account", which is what a generic 409
+        // message would otherwise say.
+        const message = t('login.error_passkey_unavailable');
+        setError(message);
+        showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
       } else {
         const message = getLocalizedErrorMessage(err, t);
         setError(message);

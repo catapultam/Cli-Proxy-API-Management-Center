@@ -29,9 +29,9 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      // Required so the HttpOnly `cpa_mgmt_session` cookie is sent in session (cookie) auth
-      // mode. A no-op for key mode and for cross-origin bearer-session mode.
-      withCredentials: true,
+      // The backend's CORS policy is ACAO `*` without Allow-Credentials, so a credentialed
+      // cross-origin request fails outright in the browser. Do not set `withCredentials` here:
+      // same-origin requests (cookie session mode) send the cookie regardless.
     });
 
     this.setupInterceptors();
@@ -58,6 +58,16 @@ class ApiClient {
   /** Guards read/modify/write operations across connection changes, including ABA switches. */
   getConnectionRevision(): number {
     return this.connectionRevision;
+  }
+
+  /**
+   * Swaps only the bearer token, e.g. for a sliding session renewal (`X-CPA-Session-Refresh`).
+   * Unlike `setConfig`, this never bumps `connectionRevision`: the request that carried the
+   * refresh (and any other in-flight request on the same connection) must not be treated as
+   * stale by `getConnectionRevision()`/`guardConfigConnection()` callers.
+   */
+  setToken(managementKey: string): void {
+    this.managementKey = managementKey;
   }
 
   private readHeader(headers: Record<string, unknown> | undefined, keys: string[]): string | null {

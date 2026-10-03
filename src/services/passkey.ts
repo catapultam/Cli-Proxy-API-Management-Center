@@ -135,7 +135,33 @@ export function creationOptionsFromJSON(input: {
   };
 }
 
-/** Converts a ceremony result `PublicKeyCredential` into the JSON shape the backend expects. */
+interface AttestationLikeResponse {
+  clientDataJSON: ArrayBuffer;
+  attestationObject: ArrayBuffer;
+  getTransports?: () => string[];
+}
+
+interface AssertionLikeResponse {
+  clientDataJSON: ArrayBuffer;
+  authenticatorData: ArrayBuffer;
+  signature: ArrayBuffer;
+  userHandle?: ArrayBuffer | null;
+}
+
+const isAttestationLikeResponse = (response: unknown): response is AttestationLikeResponse =>
+  typeof response === 'object' && response !== null && 'attestationObject' in response;
+
+const isAssertionLikeResponse = (response: unknown): response is AssertionLikeResponse =>
+  typeof response === 'object' && response !== null && 'authenticatorData' in response;
+
+/**
+ * Converts a ceremony result `PublicKeyCredential` into the JSON shape the backend expects.
+ *
+ * Duck-types the response (attestation vs. assertion) by its fields rather than
+ * `instanceof AuthenticatorAttestationResponse`/`AuthenticatorAssertionResponse`: those globals
+ * don't exist outside a browser, which would make this fallback untestable, and duck-typing is
+ * no less correct since the two shapes never overlap.
+ */
 export function credentialToJSON(credential: PublicKeyCredential): JsonRecord {
   const asJsonCapable = credential as unknown as { toJSON?: () => JsonRecord };
   if (typeof asJsonCapable.toJSON === 'function') {
@@ -150,20 +176,14 @@ export function credentialToJSON(credential: PublicKeyCredential): JsonRecord {
     clientExtensionResults: credential.getClientExtensionResults?.() ?? {},
   };
 
-  if (
-    typeof AuthenticatorAttestationResponse !== 'undefined' &&
-    response instanceof AuthenticatorAttestationResponse
-  ) {
+  if (isAttestationLikeResponse(response)) {
     base.response = {
       clientDataJSON: arrayBufferToBase64Url(response.clientDataJSON),
       attestationObject: arrayBufferToBase64Url(response.attestationObject),
       transports:
         typeof response.getTransports === 'function' ? response.getTransports() : undefined,
     };
-  } else if (
-    typeof AuthenticatorAssertionResponse !== 'undefined' &&
-    response instanceof AuthenticatorAssertionResponse
-  ) {
+  } else if (isAssertionLikeResponse(response)) {
     base.response = {
       clientDataJSON: arrayBufferToBase64Url(response.clientDataJSON),
       authenticatorData: arrayBufferToBase64Url(response.authenticatorData),

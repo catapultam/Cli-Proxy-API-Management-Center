@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { apiClient } from '@/services/api/client';
+import { guardConfigConnection } from '@/services/api/configValue';
 import { sessionApi } from '@/services/api/session';
 import { handleSessionRefreshToken, useAuthStore } from '@/stores/useAuthStore';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -77,7 +78,6 @@ describe('applySessionLogin transport selection', () => {
     expect(state.authMode).toBe('session');
     expect(state.isAuthenticated).toBe(true);
     expect(state.loginMethod).toBe('password');
-    expect(state.sessionExpiresAt).toBe(SESSION_RESPONSE.expires_at);
   });
 
   test('uses bearer transport and stores the token when cross-origin', () => {
@@ -145,13 +145,23 @@ describe('X-CPA-Session-Refresh handling', () => {
 describe('restoreSession', () => {
   test('logs straight in with no prompt when session/status reports authenticated', async () => {
     setFakeWindow('https://panel.example');
-    useAuthStore.setState({ apiBase: 'https://panel.example' });
+    // `isLoggedIn` + a remembered key are set so that, if the session fast-path below failed to
+    // return early, the legacy flow would actually call `login()` — making the "not called"
+    // assertion meaningful rather than trivially true.
+    localStorage.setItem('isLoggedIn', 'true');
+    useAuthStore.setState({
+      apiBase: 'https://panel.example',
+      managementKey: 'would-be-used-if-session-path-did-not-return-early',
+      rememberPassword: true,
+      authMode: 'key',
+    });
     const status: SessionStatus = {
       account: true,
       authenticated: true,
       method: 'password',
       passkeys_available: false,
       passkey_origins: [],
+      passkey_rp_id: '',
     };
     spies.push(spyOn(sessionApi, 'getStatus').mockResolvedValue(status));
     const loginSpy = spyOn(useAuthStore.getState(), 'login');
@@ -191,6 +201,11 @@ describe('restoreSession', () => {
   });
 
   test('does not retry a stale session token against the legacy key flow', async () => {
+    // `isLoggedIn` is set so that, if the "previousAuthMode === 'session'" early return below were
+    // missing, the legacy flow would call `login()` with the stale `cpas_` token as `managementKey`
+    // — making the "not called" assertion actually exercise the guard instead of being vacuously
+    // true because the legacy flow is unreachable for an unrelated reason.
+    localStorage.setItem('isLoggedIn', 'true');
     useAuthStore.setState({
       apiBase: 'https://api.other-origin.example',
       managementKey: 'cpas_expired-token',
@@ -203,6 +218,7 @@ describe('restoreSession', () => {
       method: '',
       passkeys_available: false,
       passkey_origins: [],
+      passkey_rp_id: '',
     };
     spies.push(spyOn(sessionApi, 'getStatus').mockResolvedValue(unauthenticated));
     const loginSpy = spyOn(useAuthStore.getState(), 'login');
@@ -217,7 +233,7 @@ describe('restoreSession', () => {
     expect(useAuthStore.getState().managementKey).toBe('');
   });
 
-  test('a network error probing session/status falls back to the remembered-key flow', async () => {
+  test('a network error probing session/status falls back to the remembered-key flow (key mode)', async () => {
     localStorage.setItem('isLoggedIn', 'true');
     useAuthStore.setState({
       apiBase: 'https://panel.example',
@@ -235,5 +251,105 @@ describe('restoreSession', () => {
 
     expect(result).toBe(true);
     expect(useAuthStore.getState().authMode).toBe('key');
+  });
+
+  test('a network error probing session/status leaves a remembered session untouched and retries later', async () => {
+    useAuthStore.setState({
+      apiBase: 'https://api.other-origin.example',
+      managementKey: 'cpas_still-good-token',
+      authMode: 'session',
+      sessionTransport: 'bearer',
+    });
+    const getStatusSpy = spyOn(sessionApi, 'getStatus').mockRejectedValueOnce(
+      new Error('network unavailable')
+    );
+    spies.push(getStatusSpy);
+    const loginSpy = spyOn(useAuthStore.getState(), 'login');
+    spies.push(loginSpy);
+
+    const result = await useAuthStore.getState().restoreSession();
+
+    // Inconclusive: neither confirmed authenticated nor confirmed logged out.
+    expect(result).toBe(false);
+    expect(loginSpy).not.toHaveBeenCalled();
+    // The session identity must survive a transient failure — never cleared on a guess.
+    expect(useAuthStore.getState().authMode).toBe('session');
+    expect(useAuthStore.getState().sessionTransport).toBe('bearer');
+    expect(useAuthStore.getState().managementKey).toBe('cpas_still-good-token');
+
+    // Because the failed probe must not be cached, a second call retries for real and can
+    // succeed once the backend is reachable again.
+    getStatusSpy.mockResolvedValueOnce({
+      account: true,
+      authenticated: true,
+      method: 'password',
+      passkeys_available: false,
+      passkey_origins: [],
+      passkey_rp_id: '',
+    } satisfies SessionStatus);
+    const retryResult = await useAuthStore.getState().restoreSession();
+    expect(retryResult).toBe(true);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+});
+
+describe('identityVersion', () => {
+  test('bumps on login(), applySessionLogin(), and logout(), but not on a token refresh', async () => {
+    setFakeWindow('https://panel.example');
+    useAuthStore.setState({ apiBase: 'https://panel.example' });
+    const fetchConfigSpy = spyOn(useConfigStore.getState(), 'fetchConfig').mockResolvedValue(
+      undefined as never
+    );
+    spies.push(fetchConfigSpy);
+
+    const v0 = useAuthStore.getState().identityVersion;
+    await useAuthStore.getState().login({
+      apiBase: 'https://panel.example',
+      managementKey: 'a-key',
+      rememberPassword: true,
+    });
+    const v1 = useAuthStore.getState().identityVersion;
+    expect(v1).toBeGreaterThan(v0);
+
+    useAuthStore
+      .getState()
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+    const v2 = useAuthStore.getState().identityVersion;
+    expect(v2).toBeGreaterThan(v1);
+
+    // A refresh renews the same identity; it must not look like a new login/logout.
+    handleSessionRefreshToken('cpas_refreshed-again');
+    expect(useAuthStore.getState().identityVersion).toBe(v2);
+
+    await useAuthStore.getState().logout();
+    expect(useAuthStore.getState().identityVersion).toBeGreaterThan(v2);
+  });
+});
+
+describe('apiClient.setToken / guardConfigConnection (session-refresh mid-request safety)', () => {
+  test('setToken swaps the bearer token without bumping the connection revision', () => {
+    apiClient.setConfig({ apiBase: 'https://panel.example', managementKey: 'cpas_old' });
+    const revisionBefore = apiClient.getConnectionRevision();
+
+    apiClient.setToken('cpas_new');
+
+    expect(apiClient.getConnectionRevision()).toBe(revisionBefore);
+  });
+
+  test('a session-refresh mid-request does not trip guardConfigConnection', () => {
+    apiClient.setConfig({ apiBase: 'https://panel.example', managementKey: 'cpas_old' });
+    useAuthStore.setState({
+      apiBase: 'https://panel.example',
+      managementKey: 'cpas_old',
+      authMode: 'session',
+      sessionTransport: 'bearer',
+    });
+
+    // Simulate a request that started before the refresh arrived.
+    const assertConnection = guardConfigConnection();
+
+    handleSessionRefreshToken('cpas_new');
+
+    expect(() => assertConnection()).not.toThrow();
   });
 });

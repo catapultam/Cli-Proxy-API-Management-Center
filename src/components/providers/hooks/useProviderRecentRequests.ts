@@ -32,14 +32,16 @@ const createProviderRecentRequestsCache = (): ProviderRecentRequestsCache => ({
 
 export const createProviderRecentRequestsCacheController = () => {
   let currentApiBase = '';
-  let currentManagementKey = '';
+  let currentIdentityVersion = -1;
   let currentCache = createProviderRecentRequestsCache();
 
   return {
-    forScope(apiBase: string, managementKey: string): ProviderRecentRequestsCache {
-      if (apiBase !== currentApiBase || managementKey !== currentManagementKey) {
+    // `identityVersion`, not the management key/token itself: a sliding session-token refresh
+    // must not reset this cache, since it's still the same logged-in identity.
+    forScope(apiBase: string, identityVersion: number): ProviderRecentRequestsCache {
+      if (apiBase !== currentApiBase || identityVersion !== currentIdentityVersion) {
         currentApiBase = apiBase;
-        currentManagementKey = managementKey;
+        currentIdentityVersion = identityVersion;
         currentCache = createProviderRecentRequestsCache();
       }
       return currentCache;
@@ -104,10 +106,10 @@ const fetchProviderRecentRequests = async (
 export function useProviderRecentRequests(options: UseProviderRecentRequestsOptions = {}) {
   const enabled = options.enabled ?? true;
   const apiBase = useAuthStore((state) => state.apiBase);
-  const managementKey = useAuthStore((state) => state.managementKey);
+  const identityVersion = useAuthStore((state) => state.identityVersion);
   const cache = useMemo(
-    () => providerRecentRequestsCacheController.forScope(apiBase, managementKey),
-    [apiBase, managementKey]
+    () => providerRecentRequestsCacheController.forScope(apiBase, identityVersion),
+    [apiBase, identityVersion]
   );
   const [usageState, setUsageState] = useState(() => ({
     cache,
@@ -132,8 +134,7 @@ export function useProviderRecentRequests(options: UseProviderRecentRequestsOpti
       }
 
       const hasFreshCache =
-        cache.cachedAt > 0 &&
-        Date.now() - cache.cachedAt < PROVIDER_RECENT_REQUESTS_STALE_TIME_MS;
+        cache.cachedAt > 0 && Date.now() - cache.cachedAt < PROVIDER_RECENT_REQUESTS_STALE_TIME_MS;
 
       if (!loadOptions.force && hasFreshCache) {
         setUsageForCurrentScope(cache.cachedUsageByProvider);

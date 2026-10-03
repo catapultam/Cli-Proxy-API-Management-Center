@@ -84,8 +84,11 @@ export function AccountPage() {
   }, [connectionStatus, loadAccount]);
 
   const passwordHint = useMemo(
-    () => t('account.password_hint', { count: MIN_PASSWORD_LENGTH }),
-    [t]
+    () =>
+      account?.configured
+        ? t('account.password_hint_keep_current', { count: MIN_PASSWORD_LENGTH })
+        : t('account.password_hint', { count: MIN_PASSWORD_LENGTH }),
+    [account?.configured, t]
   );
 
   const handleSaveAccount = useCallback(async () => {
@@ -94,15 +97,20 @@ export function AccountPage() {
       showNotification(t('account.error_username_required'), 'error');
       return;
     }
+    const isFirstTimeSetup = !account?.configured;
+    // On an existing account an empty password keeps the current one (username-only changes are
+    // valid); the password is only required on first-time setup.
+    if (isFirstTimeSetup && !password) {
+      showNotification(t('account.error_password_required'), 'error');
+      return;
+    }
     if (password && password.length < MIN_PASSWORD_LENGTH) {
       showNotification(passwordHint, 'error');
       return;
     }
-    if (!account?.configured && !password) {
-      showNotification(t('account.error_password_required'), 'error');
-      return;
-    }
-    if (requiresCurrentPassword && account?.configured && password && !currentPassword) {
+    // Over a session, ANY change to an existing account (even username-only) requires the
+    // current password; over the management key it is never required.
+    if (requiresCurrentPassword && !currentPassword) {
       showNotification(t('account.error_current_password_required'), 'error');
       return;
     }
@@ -112,9 +120,7 @@ export function AccountPage() {
       const response = await accountApi.save({
         username: trimmedUsername,
         password,
-        ...(requiresCurrentPassword && currentPassword
-          ? { current_password: currentPassword }
-          : {}),
+        ...(requiresCurrentPassword ? { current_password: currentPassword } : {}),
       });
       applySessionLogin(apiBase, response, 'password');
       setAccount((prev) =>
@@ -275,8 +281,13 @@ export function AccountPage() {
         try {
           await accountApi.signOutAll();
           showNotification(t('account.signed_out_all'), 'success');
-          await logout();
-          navigate('/login', { replace: true });
+          // Sign-out-all rotates session-secret, invalidating every session (including this
+          // browser's). A key-mode admin's auth doesn't go through sessions at all, so they stay
+          // logged in; only a session-mode caller needs to be logged out locally too.
+          if (authMode === 'session') {
+            await logout();
+            navigate('/login', { replace: true });
+          }
         } catch (err: unknown) {
           const message = getErrorMessage(err);
           showNotification(
@@ -288,7 +299,7 @@ export function AccountPage() {
         }
       },
     });
-  }, [logout, navigate, showConfirmation, showNotification, t]);
+  }, [authMode, logout, navigate, showConfirmation, showNotification, t]);
 
   const passkeysAvailable = Boolean(account?.passkey_rp_id) && account?.configured;
   const canAddPasskey = passkeysAvailable && supportsPasskeys();

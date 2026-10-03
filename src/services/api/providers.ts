@@ -256,7 +256,9 @@ const getGroups = async (family: ProviderFamily) => {
   const current = useAuthStore.getState();
   if (
     session.apiBase !== current.apiBase ||
-    session.managementKey !== current.managementKey ||
+    // `identityVersion`, not `managementKey`: a sliding session-token refresh must not look like
+    // a changed connection (the token itself can legitimately change mid-request).
+    session.identityVersion !== current.identityVersion ||
     session.isAuthenticated !== current.isAuthenticated
   )
     throw conflict();

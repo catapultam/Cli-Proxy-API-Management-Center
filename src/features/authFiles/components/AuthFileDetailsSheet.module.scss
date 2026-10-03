@@ -19,7 +19,8 @@
 .error {
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--danger-color);
+  // --danger-color is ~3.83:1 against this surface, short of the 4.5:1 text minimum.
+  color: var(--failure-badge-text);
   background: var(--bg-error-light);
   border: 1px solid var(--warning-border);
   border-radius: 8px;
@@ -55,11 +56,7 @@
   border-radius: 10px;
   padding: 10px 12px;
 
-  &:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-10);
-  }
+  // Keyboard/click focus relies on the global `:focus-visible` outline (global.scss).
 }
 
 .textareaInvalid {
@@ -98,7 +95,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
     border-radius: 2px;
   }

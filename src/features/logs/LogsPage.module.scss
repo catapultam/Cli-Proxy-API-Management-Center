@@ -12,7 +12,10 @@
 
 .pageHeader {
   display: flex;
-  align-items: center;
+  // `flex-start` (not `center`): the taller tab-bar row centering against the
+  // shorter title pushed the title a few px below every other route's page
+  // title at the same viewport.
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 12px 24px;
   flex: none;
@@ -54,7 +57,7 @@
 .container button:focus-visible,
 .structuredFilters button:focus-visible,
 .logPanel:focus-visible {
-  outline: 2px solid var(--primary-color);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -128,6 +131,13 @@
   font-weight: 500;
   line-height: 1;
   box-shadow: none;
+}
+
+.searchInput:global(.input),
+.levelSelect > button {
+  // --control-border (not --border-color): these are form controls (WCAG 1.4.11
+  // needs >=3:1 against the surface), unlike the plain buttons sharing the rule above.
+  border-color: var(--control-border);
 }
 
 .searchInput:global(.input) {
@@ -386,7 +396,7 @@
   .copyButton:global(.btn) {
     position: absolute;
     top: 2px;
-    right: 4px;
+    right: 8px;
   }
   .logRow {
     padding-right: 36px;
@@ -506,7 +516,9 @@
 }
 .copyButton:global(.btn) {
   position: sticky;
-  right: 4px;
+  // 4px left only ~0px clearance for the focus ring (2px outline + 2px
+  // outline-offset) before .logPanel's `overflow: auto` clips it.
+  right: 8px;
   flex: none;
   margin-left: auto;
   background: var(--bg-primary);

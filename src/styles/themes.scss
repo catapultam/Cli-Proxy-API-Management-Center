@@ -1,38 +1,47 @@
 /**
- * 主题样式
+ * Theme styles
  */
 
-// 浅色主题（默认）
+// Light theme (default)
 :root {
-  // 极简暖灰：浅色模式
-  --bg-secondary: #faf9f5; // 页面背景（纸感）
-  --bg-primary: #f0eee8; // 容器/卡片背景
-  --bg-tertiary: #e9e6df; // hover/次级背景
+  // Minimal warm gray: light mode
+  --bg-secondary: #f3f1ec; // Page background (paper feel): one step darker than cards, so cards don't disappear into the page
+  --bg-primary: #fffdf9; // Container/card background (a lighter warm paper than the sidebar)
+  --bg-tertiary: #e9e6df; // hover/secondary background
   --bg-hover: var(--bg-tertiary);
   --bg-quinary: #f6f4ee;
   --bg-error-light: rgba(198, 87, 70, 0.1);
   --floating-surface: #fffdf9;
   --floating-shadow: 0 12px 26px rgba(0, 0, 0, 0.14);
+  --surface-sidebar: #ebe8e1; // Sidebar's own base color: one step darker than the page background, and distinct from --bg-tertiary (otherwise sidebar hover would disappear); still clears --control-border's 3:1
+  --login-brand-bg: #151412; // Login page brand panel: warm ink
 
   --text-primary: #2d2a26;
-  --text-secondary: #6d6760;
-  --text-tertiary: #a29c95;
+  --text-secondary: #57524c;
+  --text-tertiary: #686661;
   --text-quaternary: #c0bab3;
   --text-muted: var(--text-tertiary);
 
-  --border-color: #e3e1db; // 边框/分割线
+  --border-color: #e3e1db; // Border/divider
   --border-secondary: var(--border-color);
   --border-primary: #d5d2cb;
   --border-hover: #cecac4;
+  --control-border: #8a847d; // Form control stroke: heavier than the divider, clears the non-text 3:1
 
-  --primary-color: #8b8680; // 行动色（主色）
+  --primary-color: #8b8680; // Action color (primary)
   --primary-hover: #7f7a74;
   --primary-active: #726d67;
   --primary-contrast: #ffffff;
 
+  // Action color pair (fill/text pairing for primary buttons/switches/checkboxes): derived from ink itself, auto-inverts between light/dark
+  --action-bg: var(--text-primary);
+  --action-bg-hover: color-mix(in srgb, var(--text-primary) 86%, var(--bg-secondary));
+  --action-fg: var(--bg-secondary);
+  --focus-ring: var(--text-primary);
+
   --success-color: #10b981;
   --quota-medium-color: #e0aa14;
-  --warning-color: #c65746; // 错误/警告色
+  --warning-color: #c65746; // Error/warning color
   --error-color: #c65746;
   --danger-color: var(--error-color);
   --info-color: var(--primary-color);
@@ -94,18 +103,20 @@
 
 // 纯白主题
 [data-theme='white'] {
-  --bg-secondary: #ffffff;
+  --bg-secondary: #fafafa; // Page background: one step darker than the pure-white card, so card != page
   --bg-primary: #ffffff;
-  --bg-tertiary: #f6f6f6;
+  --bg-tertiary: #ececec; // hover: one step darker than the sidebar, otherwise sidebar hover clashes with the sidebar's own base color
   --bg-hover: var(--bg-tertiary);
   --bg-quinary: #ffffff;
   --bg-error-light: rgba(198, 87, 70, 0.08);
   --floating-surface: #ffffff;
   --floating-shadow: 0 12px 26px rgba(0, 0, 0, 0.12);
+  --surface-sidebar: #f2f2f2; // In the pure-white theme the sidebar must stay distinguishable from both the page and hover
+  --login-brand-bg: #151412;
 
   --text-primary: #2d2a26;
-  --text-secondary: #6d6760;
-  --text-tertiary: #a29c95;
+  --text-secondary: #57524c;
+  --text-tertiary: #686661;
   --text-quaternary: #c0bab3;
   --text-muted: var(--text-tertiary);
 
@@ -113,11 +124,17 @@
   --border-secondary: var(--border-color);
   --border-primary: #d9d9d9;
   --border-hover: #cccccc;
+  --control-border: #8a847d;
 
   --primary-color: #8b8680;
   --primary-hover: #7f7a74;
   --primary-active: #726d67;
   --primary-contrast: #ffffff;
+
+  // --action-bg/-hover/-fg and --focus-ring are declared once, in :root below —
+  // white's --text-primary/--bg-secondary are identical to :root's, so re-declaring
+  // the same color-mix()/var() formula here would just repeat the same computed
+  // value rather than actually differing.
 
   --success-color: #10b981;
   --quota-medium-color: #e0aa14;
@@ -184,11 +201,20 @@
   --border-secondary: var(--border-color);
   --border-primary: #4a453f;
   --border-hover: #5a544d;
+  --control-border: #7a746d;
 
   --primary-color: #8b8680;
   --primary-hover: #9a948e;
   --primary-active: #a6a099;
   --primary-contrast: #ffffff;
+
+  // --action-bg/-hover/-fg and --focus-ring stay declared only in :root (see the
+  // comment there): they're pure var()/color-mix() formulas over --text-primary and
+  // --bg-secondary, both of which dark overrides below, so the custom-property
+  // cascade already resolves them to dark's colors without redeclaring the formula.
+  --surface-sidebar: var(--bg-primary); // Dark keeps the original: sidebar and card share the same color
+  // Login page brand panel: must stay clearly distinct from the dark page background (#151412), otherwise the split disappears in dark mode
+  --login-brand-bg: #0b0a09;
 
   --success-color: #10b981;
   --quota-medium-color: #ffd862;

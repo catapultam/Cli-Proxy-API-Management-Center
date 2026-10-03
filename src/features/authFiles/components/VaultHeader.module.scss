@@ -60,7 +60,10 @@
 }
 
 .metaActive {
-  color: var(--viz-success);
+  // --viz-success is a data-ink token for "live traffic" dots/bars, not text — at
+  // normal text size it's ~2.25:1 against the surface. Status words use the badge
+  // text token instead, which is tuned for ≥4.5:1 in all three themes.
+  color: var(--success-badge-text);
 }
 
 .metaMuted {
@@ -68,7 +71,7 @@
 }
 
 .metaProblem {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 /* ---------- 动作区 ---------- */
@@ -109,7 +112,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
@@ -150,7 +153,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }

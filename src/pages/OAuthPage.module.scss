@@ -99,13 +99,18 @@
   }
 
   :global(.btn-primary) {
-    border-color: #1783ff;
-    background: #1783ff;
+    // #1783ff is the Kimi brand blue, but white text on it is only ~3.7:1 — short
+    // of the 4.5:1 text minimum. A darker shade of the same blue keeps the brand
+    // color while clearing contrast; same value for both light and dark (this card
+    // doesn't otherwise theme).
+    border-color: #0a66c2;
+    background: #0a66c2;
+    color: #fff;
     box-shadow: 0 8px 20px -12px rgba(23, 131, 255, 0.9);
 
     &:hover {
-      border-color: #0875ed;
-      background: #0875ed;
+      border-color: #084f97;
+      background: #084f97;
     }
   }
 

@@ -922,11 +922,13 @@ export function LogsPage() {
                 </div>
               ) : logBuffer.buffer.length > 0 ? (
                 <EmptyState
+                  variant="quiet"
                   title={t('logs.search_empty_title')}
                   description={t('logs.search_empty_desc')}
                 />
               ) : showFileLoggingRequired ? (
                 <EmptyState
+                  variant="quiet"
                   title={t(
                     cpaNeedsFileLogging
                       ? 'logs.cpa_file_logging_required_title'
@@ -939,7 +941,11 @@ export function LogsPage() {
                   )}
                 />
               ) : (
-                <EmptyState title={t('logs.empty_title')} description={t('logs.empty_desc')} />
+                <EmptyState
+                  variant="quiet"
+                  title={t('logs.empty_title')}
+                  description={t('logs.empty_desc')}
+                />
               )}
             </div>
           </Card>

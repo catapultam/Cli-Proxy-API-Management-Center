@@ -52,14 +52,15 @@
   flex: 0 1 340px;
   min-width: 0;
   height: 36px;
-  border: 1px solid transparent;
+  // --control-border (not transparent): a form control's boundary against its
+  // adjacent surface needs >=3:1 (WCAG 1.4.11) — a background tint alone isn't enough.
+  border: 1px solid var(--control-border);
   border-radius: 10px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
 
   &:focus-within {
-    border-color: var(--border-hover);
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
@@ -110,7 +111,7 @@
   cursor: pointer;
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
 
@@ -126,7 +127,8 @@
 
   button[aria-haspopup='listbox'] {
     height: 36px;
-    border-color: transparent;
+    // --control-border (not transparent): matches .search's boundary treatment.
+    border-color: var(--control-border);
     border-radius: 10px;
     background: transparent;
     box-shadow: none;
@@ -134,7 +136,7 @@
 
     &:focus-visible,
     &[aria-expanded='true'] {
-      outline: 2px solid var(--primary-color);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
       background: var(--bg-secondary);
       color: var(--text-primary);

@@ -61,7 +61,9 @@
 }
 
 .metaLoaded {
-  color: var(--viz-success);
+  // --viz-success/--viz-failure are data-ink tokens for dots/bars, not text — the
+  // badge text tokens are the ones tuned for ≥4.5:1 against the surface.
+  color: var(--success-badge-text);
 }
 
 .metaMuted {
@@ -69,7 +71,7 @@
 }
 
 .metaAttention {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 /* ---------- 动作区 ---------- */
@@ -110,7 +112,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }

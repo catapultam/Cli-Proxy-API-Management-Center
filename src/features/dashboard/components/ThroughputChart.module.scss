@@ -333,14 +333,13 @@
 
 /* ---------- 无数据占位 ---------- */
 
+// Quiet text, not a box: this already sits inside the chart card, so its own
+// border/background would read as a nested card-in-a-card.
 .placeholder {
   display: flex;
   flex-direction: column;
   gap: $spacing-xs;
   padding: $spacing-xl;
-  border-radius: $radius-lg;
-  border: 1px dashed var(--border-primary);
-  background: color-mix(in srgb, var(--bg-secondary) 60%, transparent);
   text-align: center;
 }
 

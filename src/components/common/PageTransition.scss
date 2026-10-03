@@ -7,6 +7,14 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  // Edge-flush controls (config search input, header Reload/New/Refresh buttons,
+  // dashboard CTA row) sit right at this layer's own boundary, on any side. Their
+  // keyboard focus ring would get clipped by `overflow: hidden` above. Padding
+  // pushes the clip boundary outward by a few px on all four sides, and the equal
+  // negative margin pulls the box back to its original size/position — so the
+  // visible layout is unchanged but the clip region now has room for the ring.
+  padding: 6px;
+  margin: -6px;
 
   &__layer {
     display: flex;
@@ -21,7 +29,13 @@
     // During animation, exit layer uses absolute positioning
     &--exit {
       position: absolute;
-      inset: 0;
+      // The containing block for an absolutely positioned child is this parent's
+      // padding box, which (unlike the normal-flow current layer) already includes
+      // the 6px padding on every side above. `inset: 0` would therefore stretch
+      // this layer 6px further out on every edge than the current layer. `inset:
+      // 6px` re-applies that same 6px inset on all four sides so both layers share
+      // the identical rect.
+      inset: 6px;
       overflow: hidden;
       pointer-events: none;
       will-change: transform, opacity;
@@ -35,7 +49,7 @@
       &.page-transition__layer--stacked-keep {
         display: flex;
         position: absolute;
-        inset: 0;
+        inset: 6px;
         overflow: hidden;
         pointer-events: none;
         opacity: 0;

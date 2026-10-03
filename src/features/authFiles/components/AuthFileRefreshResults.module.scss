@@ -19,11 +19,13 @@
 }
 
 .success {
-  color: var(--success-color);
+  // --success-color is a data-ink token, not a text color (~2:1 here).
+  color: var(--success-badge-text);
 }
 
 .failure {
-  color: var(--error-color);
+  // --error-color is ~3.83:1 against this surface, short of the 4.5:1 text minimum.
+  color: var(--failure-badge-text);
 }
 
 .error {

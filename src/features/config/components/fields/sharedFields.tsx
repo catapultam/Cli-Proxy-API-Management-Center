@@ -1,6 +1,8 @@
-// 8 个高频字段的唯一渲染源：SectionCommon（常用 tab）与各正典分区共用这些组件，
-// 两处渲染结构性不可能漂移（旧简单模式靠共享 JSX 常量达成同一目的）。
-// 注意：只挂载激活 tab，所以 FieldAnchor 的 DOM id 不会重复。
+// Single rendering source for the 8 high-frequency fields: SectionCommon (the "common"
+// tab) and the canonical sections share these components, so the two renders cannot
+// structurally drift (the old simple mode relied on shared JSX constants for the same
+// purpose).
+// Note: only the active tab is mounted, so FieldAnchor's DOM id is never duplicated.
 
 import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
@@ -15,11 +17,16 @@ export type SharedFieldProps = {
   values: VisualConfigValues;
   disabled: boolean;
   onChange: (patch: Partial<VisualConfigValues>) => void;
-  /** 可选的标签上方占位行（见 SponsorHintSpacer），仅在需要与代理 URL 字段对齐时传入。 */
-  topExtra?: ReactNode;
+  /**
+   * Optional placeholder row under the label (see SponsorHintSpacer), passed only when
+   * this field needs to line up with the Proxy URL field's sponsor hint row. Forwarded
+   * directly to Input's labelExtra — this is what lets same-row fields' label rows and
+   * input rows both align (not just the inputs).
+   */
+  labelExtra?: ReactNode;
 };
 
-export function HostField({ values, disabled, onChange, topExtra }: SharedFieldProps) {
+export function HostField({ values, disabled, onChange, labelExtra }: SharedFieldProps) {
   const { t } = useTranslation();
   return (
     <FieldAnchor fieldId="host">
@@ -29,7 +36,7 @@ export function HostField({ values, disabled, onChange, topExtra }: SharedFieldP
         value={values.host}
         onChange={(e) => onChange({ host: e.target.value })}
         disabled={disabled}
-        topExtra={topExtra}
+        labelExtra={labelExtra}
       />
     </FieldAnchor>
   );
@@ -40,7 +47,7 @@ export function PortField({
   disabled,
   onChange,
   error,
-  topExtra,
+  labelExtra,
 }: SharedFieldProps & { error?: string }) {
   const { t } = useTranslation();
   return (
@@ -53,7 +60,7 @@ export function PortField({
         onChange={(e) => onChange({ port: e.target.value })}
         disabled={disabled}
         error={error}
-        topExtra={topExtra}
+        labelExtra={labelExtra}
       />
     </FieldAnchor>
   );
@@ -61,7 +68,8 @@ export function PortField({
 
 export function ProxyUrlField({ values, disabled, onChange }: SharedFieldProps) {
   const { t } = useTranslation();
-  // 代理 URL 较长，字段跨两列；标签下方挂赞助跳转行（数据见 sponsors.ts，空则不渲染）。
+  // Proxy URL is long, so the field spans two columns; a sponsor link row hangs under
+  // the label (data in sponsors.ts — doesn't render when empty).
   const sponsor = SPONSORS[0];
   return (
     <FieldAnchor fieldId="proxyUrl" wide>
@@ -70,7 +78,7 @@ export function ProxyUrlField({ values, disabled, onChange }: SharedFieldProps) 
         labelExtra={
           sponsor ? (
             <p className={fieldStyles.fieldSponsorHint}>
-              {t('config_management.visual.sections.network.proxy_url_sponsor_hint')}{' '}
+              {t('config_management.visual.sections.network.proxy_url_sponsor_hint')}
               <a
                 className={fieldStyles.fieldSponsorLink}
                 href={sponsor.url}
@@ -95,14 +103,28 @@ export function ProxyUrlField({ values, disabled, onChange }: SharedFieldProps) 
 }
 
 /**
- * 与代理 URL 字段同排时的隐形占位行：渲染在标签上方（Input 的 topExtra），
- * 赞助商存在时把同排字段整体下移与赞助行同高，让输入框水平对齐，
- * 同时标签与输入框之间保持正常间距；无赞助商则不渲染。
+ * Invisible placeholder row for a field that shares a grid row with the Proxy URL
+ * field: rendered under the label, above the input (Input's labelExtra), at the same
+ * position and height as ProxyUrlField's sponsor hint row, so that same-row fields'
+ * label rows and input rows both align — not just the inputs. Doesn't render when
+ * there's no sponsor.
+ *
+ * `minTracks` is the minimum number of grid-column tracks that must fit in a row for
+ * the sponsor field (Proxy URL, which spans the first 2 tracks) to still be sharing
+ * that row once this field's own track is accounted for. FieldGrid's auto-fit column
+ * count depends on container width, so this field only actually shares a row with the
+ * sponsor at widths wide enough to fit that many tracks — the `data-min-tracks`
+ * attribute lets Field.module.scss show the placeholder only then (see the
+ * `@container` rules next to `.fieldSponsorSpacer`).
  */
-export function SponsorHintSpacer() {
+export function SponsorHintSpacer({ minTracks }: { minTracks: number }) {
   if (SPONSORS.length === 0) return null;
   return (
-    <p className={fieldStyles.fieldSponsorSpacer} aria-hidden="true">
+    <p
+      className={fieldStyles.fieldSponsorSpacer}
+      aria-hidden="true"
+      data-min-tracks={minTracks}
+    >
       &nbsp;
     </p>
   );

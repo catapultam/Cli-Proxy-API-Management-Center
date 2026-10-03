@@ -3,12 +3,19 @@
 /* 可视化配色与动效 tokens（--viz-*、--ease-out-strong、--dur-*）已提升到 themes.scss :root。 */
 .page {
   position: relative;
-  max-width: 1120px;
+  // Wide enough that it stops reading as a narrow column hugging the left edge on
+  // an ultrawide monitor, without being so wide that `margin: 0 auto` becomes
+  // necessary (see below).
+  max-width: 1480px;
   width: 100%;
-  margin: 0 auto;
+  // Not `margin: 0 auto`: centering a capped max-width inside .main-content's
+  // wider content box shifts this page's left edge away from every other
+  // route's (none of which cap their width), so the title doesn't line up
+  // with the title on any other route at the same viewport.
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: clamp(44px, 6.5vh, 76px);
+  gap: clamp(32px, 4.5vh, 56px);
 }
 
 /* ---------- 环境层（ambient）---------- */
@@ -45,25 +52,6 @@
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 26%, #000 62%, transparent);
 }
 
-.gridWash {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(to right, var(--border-color) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--border-color) 1px, transparent 1px);
-  background-size: 72px 72px;
-  opacity: 0.24;
-  /* 同样从顶端 0 淡入（intersect 取两层交集），避免网格在裁切线处满强度起步 */
-  mask-image:
-    linear-gradient(to bottom, transparent, #000 48px),
-    radial-gradient(ellipse 70% 60% at 50% 0%, #000 0%, transparent 78%);
-  -webkit-mask-image:
-    linear-gradient(to bottom, transparent, #000 48px),
-    radial-gradient(ellipse 70% 60% at 50% 0%, #000 0%, transparent 78%);
-  mask-composite: intersect;
-  -webkit-mask-composite: source-in;
-}
-
 /* ---------- Hero ---------- */
 
 .hero {
@@ -72,14 +60,18 @@
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
   gap: clamp($spacing-lg, 4vw, 56px);
-  align-items: center;
-  padding-top: clamp($spacing-md, 3vh, 40px);
+  // `start` (not `center`): the two grid columns have different intrinsic
+  // heights (heroPanel is taller than the title block), and centering a
+  // shorter item against a taller one moves its top out of alignment with
+  // every other route's page title at the same viewport.
+  align-items: start;
+  padding-top: 0;
   /* 底部留出脉搏线的呼吸空间 */
-  padding-bottom: clamp(64px, 11vh, 120px);
+  padding-bottom: clamp(40px, 6vh, 72px);
 
   @media (max-width: 900px) {
     grid-template-columns: minmax(0, 1fr);
-    padding-bottom: clamp(48px, 8vh, 72px);
+    padding-bottom: clamp(32px, 5vh, 48px);
   }
 }
 
@@ -89,7 +81,7 @@
   left: 0;
   right: 0;
   bottom: -10px;
-  height: clamp(88px, 15vh, 160px);
+  height: clamp(64px, 10vh, 112px);
   z-index: 0;
   pointer-events: none;
 }
@@ -107,10 +99,10 @@
 /* 判词标题：文案来自实时状态，短，所以敢放大 */
 .heroTitle {
   margin: 0;
-  font-size: clamp(44px, 6.2vw, 80px);
+  font-size: clamp(32px, 4vw, 52px);
   line-height: 1.05;
   font-weight: 700;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.025em;
   color: var(--text-primary);
   text-wrap: balance;
 }
@@ -272,7 +264,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .liveBadge {
@@ -306,7 +298,7 @@
 /* 遥测数字统一等宽：这是 CLI 代理，mono 是它的母语 */
 .heroFigure {
   font-family: $font-mono;
-  font-size: clamp(42px, 5.6vw, 62px);
+  font-size: clamp(36px, 4.2vw, 52px);
   line-height: 1.05;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -384,7 +376,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  @media (max-width: 460px) {
+  @media (max-width: 340px) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -393,11 +385,16 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: $spacing-lg;
+  min-width: 0;
+  padding: 20px;
   border-radius: 14px;
   border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  background: var(--bg-primary);
   transition: border-color $transition-fast;
+  // .statValue sizes itself off this tile's own inline size (cqi), not the
+  // viewport — the tile's actual width depends on the grid's current column
+  // count, which a vw-based font-size can't see.
+  container-type: inline-size;
 
   /* 左上角色签：语义色调由 --tile-accent 注入 */
   &::before {
@@ -429,12 +426,26 @@
 
 .statValue {
   font-family: $font-mono;
-  font-size: 28px;
+  // Plain px fallback for engines that don't understand the `cqi` unit: an
+  // unsupported unit inside clamp() invalidates the whole declaration, so
+  // without this line such engines would fall through to an inherited size
+  // instead of a sane default.
+  font-size: 24px;
+  // cqi (container-query inline unit, % of .statTile's own content-box width)
+  // instead of a fixed size or vw: a long value (e.g. "1,234,567") shrinks to
+  // fit whatever width the current column count actually gives this tile,
+  // without ever breaking a number across lines (see white-space below).
+  font-size: clamp(16px, 13.3cqi, 30px);
   line-height: 1.1;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  // A number has no word-break opportunities worth taking: wrapping mid-digit
+  // ("1,234,5 / 67") is always worse than shrinking further, which the cqi
+  // clamp above already does.
+  white-space: nowrap;
 }
 
 .statMeter {
@@ -444,7 +455,7 @@
 .statHint {
   font-size: 12px;
   line-height: 1.45;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 /* ---------- 通用区块 ---------- */
@@ -585,7 +596,7 @@
   font-family: $font-mono;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 
   @media (max-width: 760px) {

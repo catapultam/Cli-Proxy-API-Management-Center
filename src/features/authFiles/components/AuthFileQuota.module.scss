@@ -55,7 +55,8 @@ button.quotaMessageAction {
   font-size: $quota-font-size;
   font-weight: 500;
   line-height: 1.5;
-  color: var(--danger-color);
+  // --danger-color is ~3.83:1 against this surface, short of the 4.5:1 text minimum.
+  color: var(--failure-badge-text);
   overflow-wrap: anywhere;
 }
 
@@ -118,7 +119,7 @@ button.quotaMessageAction {
 }
 
 .quotaReset {
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
 /* Compact host: same contract class as QuotaBody.module.scss, tighter gutter. */
@@ -264,7 +265,7 @@ button.quotaMessageAction {
 .antigravityQuotaGroupDescription {
   font-size: $quota-font-size;
   font-weight: 400;
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
 /* ---------- Codex 重置积分 ---------- */
@@ -322,7 +323,7 @@ button.quotaMessageAction {
 .codexResetCreditsError {
   font-size: $quota-font-size;
   font-weight: 500;
-  color: var(--danger-color);
+  color: var(--failure-badge-text);
   overflow-wrap: anywhere;
 }
 

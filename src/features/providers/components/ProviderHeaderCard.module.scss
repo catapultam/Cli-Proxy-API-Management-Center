@@ -82,7 +82,8 @@
   transition:
     background-color $transition-fast,
     border-color $transition-fast,
-    color $transition-fast;
+    color $transition-fast,
+    transform $transition-fast;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-primary);
@@ -93,7 +94,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
@@ -109,15 +110,22 @@
 }
 
 .btnPrimary {
-  background: var(--primary-color);
-  color: var(--primary-contrast);
+  background: var(--action-bg);
+  color: var(--action-fg);
 
   &:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: var(--action-bg-hover);
   }
 
   &:active:not(:disabled) {
-    background: var(--primary-active);
+    background: var(--action-bg-hover);
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btnPrimary:active:not(:disabled) {
+    transform: none;
   }
 }
 

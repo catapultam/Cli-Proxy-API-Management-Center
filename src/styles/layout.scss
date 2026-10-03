@@ -52,7 +52,7 @@
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--bg-secondary) 88%, #0d0c0a) 0%,
+    var(--bg-secondary) 0%,
     color-mix(in srgb, var(--bg-secondary) 54%, transparent) 36%,
     color-mix(in srgb, var(--bg-secondary) 22%, transparent) 66%,
     transparent 100%
@@ -134,10 +134,8 @@
     }
 
     &:focus-visible {
-      outline: none;
-      box-shadow:
-        0 0 0 2px color-mix(in srgb, var(--primary-color) 24%, transparent),
-        4px 0 14px rgb(0 0 0 / 0.18);
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
     }
   }
 
@@ -154,7 +152,7 @@
     background: color-mix(in srgb, var(--bg-primary) 68%, transparent);
     color: var(--text-secondary);
     box-shadow:
-      0 18px 44px rgb(0 0 0 / 0.17),
+      0 4px 16px rgb(0 0 0 / 0.1),
       inset 0 1px 0 rgb(255 255 255 / 0.04);
     --glass-blur: 16px;
     backdrop-filter: var(--glass-backdrop-filter);
@@ -196,8 +194,8 @@
     }
 
     &:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 26%, transparent);
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
     }
   }
 
@@ -257,9 +255,9 @@
     }
 
     &:focus-visible {
-      outline: none;
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
       background: color-mix(in srgb, var(--text-primary) 8%, transparent);
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 22%, transparent);
     }
 
     &.active {
@@ -300,8 +298,8 @@
     }
 
     &:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 22%, transparent);
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
     }
 
     &.active {
@@ -403,7 +401,7 @@
   gap: $spacing-sm;
   flex-shrink: 0;
   overflow-y: auto;
-  background: var(--bg-primary);
+  background: var(--surface-sidebar);
   border: 0;
   border-right: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
   border-radius: 0;
@@ -453,9 +451,9 @@
       padding: 0 4px;
       border-radius: $radius-full;
       font-size: 9px;
-      color: var(--bg-primary);
+      color: var(--surface-sidebar);
       background: var(--text-primary);
-      box-shadow: 0 0 0 2px var(--bg-primary);
+      box-shadow: 0 0 0 2px var(--surface-sidebar);
     }
 
     .nav-group-label {
@@ -527,7 +525,7 @@
   .sidebar-brand-subtitle {
     margin-top: 1px;
     overflow: hidden;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
     text-overflow: ellipsis;
@@ -549,11 +547,11 @@
 
   .nav-group-label {
     padding: 0 10px 2px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--text-primary) 42%, transparent);
+    color: var(--text-tertiary);
     user-select: none;
   }
 
@@ -667,7 +665,7 @@
       border-radius: $radius-full;
       background: color-mix(in srgb, var(--text-primary) 9%, transparent);
       color: var(--text-primary);
-      font-size: 10.5px;
+      font-size: 11px;
       font-weight: 700;
       line-height: 1;
     }
@@ -687,7 +685,6 @@
     &:hover {
       background: color-mix(in srgb, var(--text-primary) 7%, transparent);
       border-color: color-mix(in srgb, var(--border-color) 58%, transparent);
-      transform: translateX(1px);
 
       .nav-icon {
         color: color-mix(in srgb, var(--text-primary) 82%, transparent);
@@ -695,9 +692,10 @@
     }
 
     &.active {
-      background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+      background: color-mix(in srgb, var(--text-primary) 14%, transparent);
       color: var(--text-primary);
-      border-color: color-mix(in srgb, var(--border-hover) 70%, transparent);
+      border-color: color-mix(in srgb, var(--border-hover) 85%, transparent);
+      font-weight: 650;
       box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 
       .nav-icon {
@@ -709,7 +707,7 @@
       min-height: 30px;
       padding: 5px 10px;
       border-radius: 8px;
-      font-size: 12.5px;
+      font-size: 13px;
       font-weight: 600;
 
       .nav-icon {
@@ -762,7 +760,7 @@
   .nav-tooltip-meta {
     max-width: 100%;
     overflow-wrap: anywhere;
-    font-size: 11.5px;
+    font-size: 12px;
     color: rgb(246 244 241 / 0.6);
     white-space: normal;
   }
@@ -788,6 +786,9 @@
   height: 100vh;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  // Without this, a focus ring on an element near the top or bottom edge of the
+  // scrollable area gets clipped by the viewport the browser scrolls it into.
+  scroll-padding-block: 8px;
 
   @supports (height: 100dvh) {
     height: 100dvh;
@@ -828,7 +829,11 @@
 .main-content {
   flex: 1 0 auto;
   min-height: 100%;
-  padding: 70px clamp(20px, 3vw, 48px) 40px;
+  // Top offset derives from --header-height (the floating toolbar's real height,
+  // kept in sync by MainLayout's ResizeObserver) rather than a literal px value,
+  // so routes with no padding of their own (e.g. the dashboard hero) never sit
+  // under the floating toolbar if that toolbar's height changes.
+  padding: calc(var(--header-height) + 16px) clamp(20px, 3vw, 48px) 40px;
   display: flex;
   flex-direction: column;
   gap: $spacing-lg;
@@ -837,7 +842,9 @@
   &.main-content-logs {
     flex: 1 1 auto;
     min-height: 0;
-    padding: 70px clamp(20px, 3vw, 48px) 24px;
+    // Same --header-height-based top offset as .main-content above, so this
+    // route's title sits at the same height as every other route's.
+    padding: calc(var(--header-height) + 16px) clamp(20px, 3vw, 48px) 24px;
     overflow: hidden;
   }
 
@@ -963,7 +970,7 @@
     width: var(--sidebar-panel-width);
     height: auto;
     transform: translateX(calc(-100% - 24px));
-    background: var(--bg-primary);
+    background: var(--surface-sidebar);
     border: 0;
     border-right: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
     border-radius: 0;
@@ -988,7 +995,7 @@
         height: 18px;
         margin-left: auto;
         padding: 0 5px;
-        font-size: 10.5px;
+        font-size: 11px;
         color: var(--text-primary);
         background: color-mix(in srgb, var(--text-primary) 9%, transparent);
         box-shadow: none;

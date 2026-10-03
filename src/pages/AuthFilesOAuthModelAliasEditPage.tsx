@@ -411,6 +411,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
       {modelAliasUnsupported ? (
         <Card>
           <EmptyState
+            variant="quiet"
             title={t('oauth_model_alias.upgrade_required_title')}
             description={t('oauth_model_alias.upgrade_required_desc')}
           />
@@ -418,6 +419,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
       ) : initialLoadError !== null ? (
         <Card>
           <EmptyState
+            variant="error"
             title={t('notification.refresh_failed')}
             description={initialLoadError || t('notification.refresh_failed')}
             action={

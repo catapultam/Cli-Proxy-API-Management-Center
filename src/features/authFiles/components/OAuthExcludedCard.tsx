@@ -31,11 +31,13 @@ export function OAuthExcludedCard(props: OAuthExcludedCardProps) {
       <div className={styles.panelBody}>
         {excludedError === 'unsupported' ? (
           <EmptyState
+            variant="quiet"
             title={t('oauth_excluded.upgrade_required_title')}
             description={t('oauth_excluded.upgrade_required_desc')}
           />
         ) : excludedError === 'load' ? (
           <EmptyState
+            variant="error"
             title={t('notification.refresh_failed')}
             action={
               <Button variant="secondary" size="sm" onClick={() => void onRetry()}>
@@ -44,9 +46,9 @@ export function OAuthExcludedCard(props: OAuthExcludedCardProps) {
             }
           />
         ) : excludedError === 'loading' ? (
-          <EmptyState title={t('common.loading')} />
+          <EmptyState variant="quiet" title={t('common.loading')} />
         ) : Object.keys(excluded).length === 0 ? (
-          <EmptyState title={t('oauth_excluded.list_empty_all')} />
+          <EmptyState variant="quiet" title={t('oauth_excluded.list_empty_all')} />
         ) : (
           <div className={styles.list}>
             {Object.entries(excluded).map(([provider, models]) => (

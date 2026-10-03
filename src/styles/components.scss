@@ -11,18 +11,33 @@
   padding: 10px 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all $transition-fast;
+  // Explicit properties, not `all`: `all` also animates the focus outline
+  // (outline-color/outline-offset aren't excluded from it), so a keyboard focus
+  // ring fades in instead of snapping on.
+  transition:
+    background-color $transition-fast,
+    border-color $transition-fast,
+    color $transition-fast,
+    transform $transition-fast;
   background-color: var(--bg-secondary);
   color: var(--text-primary);
 
   &.btn-primary {
-    background-color: var(--primary-color);
-    color: var(--primary-contrast, #fff);
-    border-color: var(--primary-color);
+    background-color: var(--action-bg);
+    color: var(--action-fg);
+    border-color: var(--action-bg);
 
     &:hover {
-      background-color: var(--primary-hover);
-      border-color: var(--primary-hover);
+      background-color: var(--action-bg-hover);
+      border-color: var(--action-bg-hover);
+    }
+
+    // Distinct from :hover, not identical to it: a pressed state needs its own
+    // feedback, not just whatever :hover happens to already be painting.
+    &:active:not(:disabled) {
+      background-color: var(--action-bg-hover);
+      border-color: var(--action-bg-hover);
+      transform: scale(0.97);
     }
   }
 
@@ -73,8 +88,14 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .btn.btn-primary:active:not(:disabled) {
+    transform: none;
+  }
+}
+
 [data-theme='dark'] {
-  .btn {
+  .btn:not(.btn-primary) {
     color: #fff;
   }
 
@@ -87,20 +108,35 @@
 .input,
 textarea {
   width: 100%;
-  border: 1px solid var(--border-color);
+  // --control-border (not --border-color): a form control's boundary against its
+  // adjacent surface needs >=3:1 (WCAG 1.4.11), which the lighter divider color
+  // doesn't reliably clear in all three themes.
+  border: 1px solid var(--control-border);
   border-radius: $radius-md;
   padding: 10px 12px;
   background-color: var(--bg-secondary);
   color: var(--text-primary);
   transition:
     border-color $transition-fast,
-    box-shadow $transition-fast;
+    box-shadow $transition-fast,
+    background-color $transition-fast;
 
-  &:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba($primary-color, 0.18);
+  &::placeholder {
+    color: var(--text-tertiary);
   }
+
+  &:hover:not(:disabled) {
+    border-color: var(--border-hover);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    background-color: var(--bg-tertiary);
+  }
+
+  // Keyboard focus comes from the single global `:focus-visible` rule in global.scss
+  // (outline only). No component-level border-color/box-shadow ring on top of it.
 }
 
 .form-group {
@@ -165,19 +201,19 @@ textarea {
   }
 
   &.success {
-    color: $success-color;
+    color: var(--success-badge-text);
     border-color: rgba($success-color, 0.35);
     background: rgba($success-color, 0.08);
   }
 
   &.warning {
-    color: $warning-color;
+    color: var(--warning-text);
     border-color: rgba($warning-color, 0.35);
     background: rgba($warning-color, 0.08);
   }
 
   &.error {
-    color: $error-color;
+    color: var(--failure-badge-text);
     border-color: rgba($error-color, 0.35);
     background: rgba($error-color, 0.08);
   }
@@ -237,7 +273,14 @@ textarea {
   }
 
   &.modal-overlay-closing {
-    animation: modal-overlay-fade-out 0.35s ease-in forwards;
+    animation: modal-overlay-fade-out 0.2s ease-in forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &.modal-overlay-entering,
+    &.modal-overlay-closing {
+      animation: none;
+    }
   }
 }
 
@@ -274,22 +317,29 @@ textarea {
   transform-origin: calc(100% - 28px) 28px;
 
   &.modal-entering {
-    animation: modal-scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    animation: modal-scale-in 0.2s var(--ease-out-strong) forwards;
   }
 
   &.modal-closing {
-    animation: modal-collapse-to-close 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: modal-collapse-to-close 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &.modal-entering,
+    &.modal-closing {
+      animation: none;
+    }
   }
 }
 
 @keyframes modal-scale-in {
   from {
     opacity: 0;
-    transform: scale(0.85) translateY(20px);
+    transform: scale(0.97);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -300,7 +350,7 @@ textarea {
   }
   100% {
     opacity: 0;
-    transform: scale(0);
+    transform: scale(0.97);
   }
 }
 
@@ -332,7 +382,6 @@ textarea {
   &:hover {
     color: var(--text-primary);
     background: var(--bg-tertiary);
-    transform: scale(1.1);
   }
 
   &:active {
@@ -476,6 +525,7 @@ textarea {
   }
 
   .empty-desc {
+    font-size: 13px;
     color: var(--text-secondary);
     margin-top: 4px;
   }
@@ -491,6 +541,58 @@ textarea {
   .empty-action .btn svg {
     display: block;
     flex-shrink: 0;
+  }
+
+  /* Nested variant: already inside a bordered card/panel, so it doesn't draw a
+     second dashed border/gray fill — plain text, centered.
+     Nested under `.empty-state` so this selector out-specifies the base
+     `.empty-title` rule above instead of merely tying with it. */
+  &.empty-state--quiet {
+    border: 0;
+    border-radius: 0;
+    padding: 28px 16px;
+    background: none;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+
+    .empty-content {
+      justify-content: center;
+    }
+
+    // Still needs to read as a heading over .empty-desc below it, not fade to the
+    // same weight/color as the description — 400/secondary made the two indistinguishable.
+    .empty-title {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+  }
+
+  /* Load-failure variant: same nested, borderless layout as `quiet` (it's also
+     already inside a bordered card/panel), but it must read as an error, not as a
+     calm "nothing here yet" message. */
+  &.empty-state--error {
+    border: 0;
+    border-radius: 0;
+    padding: 28px 16px;
+    background: none;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+
+    .empty-content {
+      justify-content: center;
+    }
+
+    .empty-icon {
+      border-color: color-mix(in srgb, var(--danger-color) 45%, transparent);
+      color: var(--failure-badge-text);
+    }
+
+    .empty-title {
+      font-weight: 600;
+      color: var(--failure-badge-text);
+    }
   }
 }
 
@@ -541,7 +643,7 @@ textarea {
   border: 1px solid rgba($error-color, 0.4);
   border-radius: $radius-md;
   padding: $spacing-sm $spacing-md;
-  color: $error-color;
+  color: var(--failure-badge-text);
 }
 
 .stack {

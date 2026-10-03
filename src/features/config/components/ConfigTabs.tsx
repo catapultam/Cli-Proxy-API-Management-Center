@@ -8,6 +8,7 @@ import {
   configTabDomId,
   type ConfigTabId,
 } from '../constants';
+import { computeConfigTabsFade } from './configTabsFade';
 import styles from './ConfigTabs.module.scss';
 
 export type ConfigTabsProps = {
@@ -47,6 +48,36 @@ export function ConfigTabs({
       inline: 'center',
     });
   }, [active]);
+
+  // The edge mask only fades the side that still has tabs to scroll toward; at
+  // scrollLeft 0 (or at the end) that side's fade — and the focus ring it would
+  // otherwise dim, e.g. the active first tab — stays off. Attributes (not React
+  // state) because this runs on every scroll frame and must not force a re-render.
+  useEffect(() => {
+    const scroller = listRef.current;
+    if (!scroller) return;
+    const update = () => {
+      const { fadeStart, fadeEnd } = computeConfigTabsFade(scroller);
+      scroller.toggleAttribute('data-fade-start', fadeStart);
+      scroller.toggleAttribute('data-fade-end', fadeEnd);
+    };
+    update();
+    scroller.addEventListener('scroll', update, { passive: true });
+    // Observe the tab buttons themselves, not just the scroller: a language switch
+    // (or a font finishing its load) changes each button's own width, which changes
+    // `scrollWidth` without necessarily changing the scroller's own border-box size
+    // (it's a `flex: 1` child, sized by its flex container, not by its content) — a
+    // ResizeObserver on the scroller alone would miss that and leave the fade stale.
+    const resizeObserver = new ResizeObserver(update);
+    resizeObserver.observe(scroller);
+    for (const button of Object.values(buttonRefs.current)) {
+      if (button) resizeObserver.observe(button);
+    }
+    return () => {
+      scroller.removeEventListener('scroll', update);
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const count = CONFIG_TAB_IDS.length;

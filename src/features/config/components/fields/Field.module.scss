@@ -1,7 +1,15 @@
 @use '../../../../styles/mixins' as *;
 
-/* 字段原语：表单控件的 scoped 覆盖 + 开关行 / 网格 / 字段组 / 搜索锚点。
-   交互反馈一律引用全局动效 tokens（--dur-* / --ease-out-strong）。 */
+/* Field primitives: scoped form-control overrides + toggle row / grid / field group /
+   search anchor. Interaction feedback always references the global motion tokens
+   (--dur-* / --ease-out-strong). */
+
+/* FieldGrid's own column math, reused below to compute the exact container width at
+   which a given column joins row 1 (see .fieldSponsorSpacer). Keep these in sync with
+   the grid-template-columns value a few lines down — they are the same grid. */
+$field-col-min: 240px;
+$field-col-gap: 14px;
+$field-col-pitch: $field-col-min + $field-col-gap;
 
 /* ---------- 表单控件宿主（原 .visualEditor 的 :global 覆盖收编于此） ---------- */
 
@@ -22,7 +30,10 @@
     min-height: 42px;
     border-radius: 10px;
     background: var(--bg-secondary);
-    border-color: var(--border-color);
+    // --control-border (not --border-color): this scoped override was undoing the
+    // global .input rule's WCAG 1.4.11 fix, leaving every config-page field (Host,
+    // Port, Proxy URL, etc.) back under 3:1 against the surface.
+    border-color: var(--control-border);
     box-shadow: none;
     transition:
       border-color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out),
@@ -30,10 +41,11 @@
       box-shadow var(--dur-hover, 200ms) var(--ease-out-strong, ease-out);
   }
 
+  // Keyboard/click focus relies on the single global `:focus-visible` outline (global.scss).
+  // Only the background shifts here; border-color/box-shadow would stack a second ring on
+  // top of that outline (triple ring on Host/Port).
   :global(.input:focus) {
     background: var(--bg-primary);
-    border-color: var(--text-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-primary) 12%, transparent);
   }
 
   :global(textarea.input) {
@@ -130,8 +142,11 @@
 
 .fieldGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax($field-col-min, 1fr));
+  gap: $field-col-gap;
+  // Queried below to decide, per field, whether it actually lands in the same grid
+  // row as the sponsor-hint field at the current width (see .fieldSponsorSpacer).
+  container-type: inline-size;
 
   @include mobile {
     grid-template-columns: minmax(0, 1fr);
@@ -166,40 +181,68 @@
   }
 }
 
-/* 字段标签下方的赞助跳转小字行（代理 URL 字段）。 */
+/* Sponsor link row under the label (Proxy URL field). A fixed-height flex row, not a
+   line-height-driven block: the inline-flex badge inside (.fieldSponsorLink) is 18px
+   border-box, and without an explicit row height the line box it sits in rounds up to
+   ~20px, throwing this row 2px taller than its placeholder twin (.fieldSponsorSpacer).
+   Pinning both to the same 18px box keeps same-row fields' inputs aligned. */
 .fieldSponsorHint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
   margin: -2px 0 0;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
 
-/* 与赞助行同字号同高度的隐形占位：同排右侧字段用它补齐标签区高度，让输入框与代理 URL 对齐。
-   移动端单列堆叠时无需对齐，直接隐藏。 */
+/* Invisible placeholder, same font size and height as the sponsor row: fields with no
+   sponsor hint of their own use it to match the label-area height of whichever field
+   does. Hidden by default — see the @container rules below — because on narrow/mobile
+   widths (single column) nothing ever shares a row with the sponsor field, and on
+   desktop only the specific columns that actually land in its row need it. */
 .fieldSponsorSpacer {
+  display: none;
   margin: -2px 0 0;
+  min-height: 18px;
   font-size: 12px;
   line-height: 1.5;
   visibility: hidden;
+}
 
-  @include mobile {
-    display: none;
+/* FieldGrid is `repeat(auto-fit, minmax($field-col-min, 1fr))`: the number of tracks
+   that fit a given container width is deterministic, so "does column N share row 1
+   with the sponsor field" is too. A field needing its Nth track becomes visible once
+   the container is wide enough for N tracks (grid width >= N * pitch - gap). Each
+   consumer passes its track number via SponsorHintSpacer's `minTracks` prop (rendered
+   as `data-min-tracks`) — see sharedFields.tsx / SectionNetwork.tsx for the mapping. */
+@for $n from 3 through 10 {
+  @container (min-width: #{$n * $field-col-pitch - $field-col-gap}) {
+    .fieldSponsorSpacer[data-min-tracks='#{$n}'] {
+      display: block;
+    }
   }
 }
 
-/* 与正文融为一体的高亮链接：同字号，复用全站金色（amber）badge 配方，hover 底色加深。 */
+/* Highlighted link that reads as part of the sentence: same font size, reusing the
+   site-wide amber badge recipe, darkens on hover. Fixed border-box height (matches
+   .fieldSponsorHint's 18px row) rather than sizing from content, so this row renders
+   the same height as .fieldSponsorSpacer's plain-text row. */
 .fieldSponsorLink {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 5px;
+  height: 18px;
+  box-sizing: border-box;
+  padding: 0 5px;
   border: 1px solid var(--amber-30);
   border-radius: 5px;
   background: var(--amber-10);
   color: var(--amber-text);
   font-weight: 600;
+  line-height: 1;
   text-decoration: none;
-  vertical-align: baseline;
   transition: background-color 0.15s ease;
 
   &:hover {

@@ -64,11 +64,14 @@
 }
 
 .metaError {
-  color: var(--viz-failure);
+  // --viz-failure/--viz-success are data-ink tokens for dots/bars, not text — at
+  // normal text size they fall short of 4.5:1. Status words use the badge text
+  // tokens instead, which are tuned for AA contrast in all three themes.
+  color: var(--failure-badge-text);
 }
 
 .metaOk {
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 /* ---------- 动作区 ---------- */
@@ -108,7 +111,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }

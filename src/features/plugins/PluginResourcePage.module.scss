@@ -25,7 +25,8 @@
   min-height: 100%;
   align-items: center;
   justify-content: center;
-  padding: 70px clamp(20px, 3vw, 48px) 40px;
+  // Same --header-height-based top offset as .main-content (styles/layout.scss).
+  padding: calc(var(--header-height) + 16px) clamp(20px, 3vw, 48px) 40px;
   background: var(--bg-secondary);
 }
 

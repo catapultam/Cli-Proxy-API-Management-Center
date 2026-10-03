@@ -87,11 +87,13 @@ export function OAuthModelAliasCard(props: OAuthModelAliasCardProps) {
       <div className={styles.panelBody}>
         {modelAliasError === 'unsupported' ? (
           <EmptyState
+            variant="quiet"
             title={t('oauth_model_alias.upgrade_required_title')}
             description={t('oauth_model_alias.upgrade_required_desc')}
           />
         ) : modelAliasError === 'load' ? (
           <EmptyState
+            variant="error"
             title={t('notification.refresh_failed')}
             action={
               <Button variant="secondary" size="sm" onClick={() => void onRetry()}>
@@ -100,10 +102,10 @@ export function OAuthModelAliasCard(props: OAuthModelAliasCardProps) {
             }
           />
         ) : modelAliasError === 'loading' ? (
-          <EmptyState title={t('common.loading')} />
+          <EmptyState variant="quiet" title={t('common.loading')} />
         ) : viewMode === 'diagram' ? (
           Object.keys(modelAlias).length === 0 ? (
-            <EmptyState title={t('oauth_model_alias.list_empty_all')} />
+            <EmptyState variant="quiet" title={t('oauth_model_alias.list_empty_all')} />
           ) : (
             <div className={styles.aliasChartSection}>
               <div className={styles.aliasChartHeader}>
@@ -135,7 +137,7 @@ export function OAuthModelAliasCard(props: OAuthModelAliasCardProps) {
             </div>
           )
         ) : Object.keys(modelAlias).length === 0 ? (
-          <EmptyState title={t('oauth_model_alias.list_empty_all')} />
+          <EmptyState variant="quiet" title={t('oauth_model_alias.list_empty_all')} />
         ) : (
           <div className={styles.list}>
             {Object.entries(modelAlias).map(([provider, mappings]) => (

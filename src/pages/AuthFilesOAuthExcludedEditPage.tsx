@@ -351,6 +351,7 @@ export function AuthFilesOAuthExcludedEditPage() {
       {excludedUnsupported ? (
         <Card>
           <EmptyState
+            variant="quiet"
             title={t('oauth_excluded.upgrade_required_title')}
             description={t('oauth_excluded.upgrade_required_desc')}
           />
@@ -358,6 +359,7 @@ export function AuthFilesOAuthExcludedEditPage() {
       ) : initialLoadError !== null ? (
         <Card>
           <EmptyState
+            variant="error"
             title={t('notification.refresh_failed')}
             description={initialLoadError || t('notification.refresh_failed')}
             action={

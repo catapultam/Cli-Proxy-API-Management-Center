@@ -26,7 +26,7 @@
 .track {
   width: 44px;
   height: 24px;
-  background: var(--border-color);
+  background: var(--control-border);
   border-radius: $radius-full;
   position: relative;
   transition: background $transition-fast;
@@ -41,15 +41,23 @@
   background: #fff;
   border-radius: $radius-full;
   box-shadow: $shadow-sm;
-  transition: transform $transition-fast;
+  transition:
+    transform $transition-fast,
+    background-color $transition-fast;
 }
 
 .root input:checked + .track {
-  background: var(--primary-color);
+  background: var(--action-bg);
 }
 
 .root input:checked + .track .thumb {
+  background: var(--action-fg);
   transform: translateX(20px);
+}
+
+.root input:focus-visible + .track {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .label {

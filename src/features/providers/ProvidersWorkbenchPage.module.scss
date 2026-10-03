@@ -1,12 +1,14 @@
 @use '../../styles/mixins' as *;
 @use '../../styles/variables' as *;
 
+// No padding here: .main-content (styles/layout.scss) already supplies the
+// --header-height-based top offset and the horizontal gutter; a second
+// top/side padding here would stack on top of that one.
 .page {
   display: flex;
   flex-direction: column;
   gap: 20px;
   width: 100%;
-  padding: 24px;
   box-sizing: border-box;
 }
 
@@ -33,7 +35,6 @@
 
 @media (max-width: 768px) {
   .page {
-    padding: 16px;
     gap: 16px;
   }
 }

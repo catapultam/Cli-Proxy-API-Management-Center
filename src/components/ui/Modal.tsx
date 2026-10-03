@@ -22,7 +22,8 @@ interface ModalProps {
   closeDisabled?: boolean;
 }
 
-const CLOSE_ANIMATION_DURATION = 350;
+// Must match the longer of the overlay/modal closing animation durations in components.scss.
+const CLOSE_ANIMATION_DURATION = 200;
 
 export function Modal({
   open,

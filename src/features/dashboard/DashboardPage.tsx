@@ -226,7 +226,6 @@ export function DashboardPage() {
     <div className={styles.page}>
       <div className={styles.ambient} aria-hidden="true">
         <span className={styles.washTop} />
-        <span className={styles.gridWash} />
       </div>
 
       {/* ---------- Hero ---------- */}

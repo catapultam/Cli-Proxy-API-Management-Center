@@ -25,11 +25,14 @@
     height: 36px;
     border-radius: 10px;
     font-size: 13px;
+    // The search icon is a `rightElement` (absolute, right: 8px, 16px square);
+    // reserve matching room so typed text/placeholder never renders under it.
+    padding-right: 34px;
   }
 }
 
 .searchIcon {
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
 /* ---------- 状态分段控件 ---------- */
@@ -66,7 +69,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -1px;
   }
 }
@@ -87,7 +90,9 @@
 }
 
 .segmentProblem.segmentActive {
-  color: var(--danger-color);
+  // --danger-color (#c65746) is ~3.83:1 against this surface — short of the 4.5:1
+  // text minimum. --failure-badge-text is the token tuned for that in all three themes.
+  color: var(--failure-badge-text);
   background: color-mix(
     in srgb,
     var(--danger-color) 12%,
@@ -134,7 +139,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 1px;
   }
 }
@@ -199,11 +204,7 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 
-  &:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-10);
-  }
+  // Keyboard/click focus relies on the global `:focus-visible` outline (global.scss).
 }
 
 /* ---------- 删除筛选结果（工具栏右端的 ghost danger） ---------- */
@@ -221,7 +222,9 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 550;
-  color: var(--danger-color);
+  // Text contrast, not the border/outline danger accent below: --danger-color is
+  // ~3.83:1 here, short of 4.5:1. --failure-badge-text is AA-tuned per theme.
+  color: var(--failure-badge-text);
   white-space: nowrap;
   transition:
     background-color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out),

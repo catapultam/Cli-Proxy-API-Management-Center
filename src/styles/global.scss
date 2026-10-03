@@ -17,6 +17,16 @@ body {
     color $transition-normal;
 }
 
+// Unified focus baseline: when it shows is left to the browser's :focus-visible
+// heuristic — for buttons/links that's usually only on keyboard navigation, but for
+// text-like inputs (input/textarea/select) Chromium also triggers it after a mouse
+// click. No component should layer a second border-color/box-shadow focus style on
+// top of this.
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 html.modal-open,
 body.modal-open {
   overflow: hidden;
@@ -44,4 +54,3 @@ body.modal-open .content {
     background: var(--border-hover);
   }
 }
-

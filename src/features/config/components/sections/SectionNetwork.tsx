@@ -18,7 +18,7 @@ import { getValidationMessage } from '../blocks/shared';
 
 const Icon = CONFIG_TAB_ICONS.network;
 
-/** 02 网络配置：代理、重试、路由策略、图像生成开关与网络行为开关。 */
+/** 02 Network config: proxy, retry, routing strategy, image generation toggle, and network behavior toggles. */
 export function SectionNetwork({
   values,
   validationErrors,
@@ -73,7 +73,7 @@ export function SectionNetwork({
           <FieldAnchor fieldId="requestRetry">
             <Input
               label={t('config_management.visual.sections.network.request_retry')}
-              topExtra={<SponsorHintSpacer />}
+              labelExtra={<SponsorHintSpacer minTracks={3} />}
               type="number"
               placeholder="3"
               value={values.requestRetry}
@@ -85,7 +85,7 @@ export function SectionNetwork({
           <FieldAnchor fieldId="maxRetryCredentials">
             <Input
               label={t('config_management.visual.sections.network.max_retry_credentials')}
-              topExtra={<SponsorHintSpacer />}
+              labelExtra={<SponsorHintSpacer minTracks={4} />}
               type="number"
               placeholder="0"
               value={values.maxRetryCredentials}
@@ -98,6 +98,7 @@ export function SectionNetwork({
           <FieldAnchor fieldId="maxRetryInterval">
             <Input
               label={t('config_management.visual.sections.network.max_retry_interval')}
+              labelExtra={<SponsorHintSpacer minTracks={5} />}
               type="number"
               placeholder="30"
               value={values.maxRetryInterval}
@@ -110,6 +111,7 @@ export function SectionNetwork({
           <FieldAnchor fieldId="authAutoRefreshWorkers">
             <Input
               label={t('config_management.visual.sections.network.auth_auto_refresh_workers')}
+              labelExtra={<SponsorHintSpacer minTracks={6} />}
               type="number"
               placeholder="16"
               value={values.authAutoRefreshWorkers}
@@ -123,6 +125,7 @@ export function SectionNetwork({
             <FieldShell
               label={t('config_management.visual.sections.network.routing_strategy')}
               labelId={routingStrategyLabelId}
+              labelExtra={<SponsorHintSpacer minTracks={7} />}
               hint={t('config_management.visual.sections.network.routing_strategy_hint')}
               hintId={routingStrategyHintId}
             >
@@ -164,6 +167,7 @@ export function SectionNetwork({
             <FieldShell
               label={t('config_management.visual.sections.network.disable_image_generation')}
               labelId={disableImageGenerationLabelId}
+              labelExtra={<SponsorHintSpacer minTracks={8} />}
               hint={t('config_management.visual.sections.network.disable_image_generation_hint')}
               hintId={disableImageGenerationHintId}
             >
@@ -186,6 +190,7 @@ export function SectionNetwork({
           <FieldAnchor fieldId="gptImage2BaseModel">
             <Input
               label={t('config_management.visual.sections.network.gpt_image_2_base_model')}
+              labelExtra={<SponsorHintSpacer minTracks={9} />}
               placeholder="gpt-5.4-mini"
               value={values.gptImage2BaseModel}
               onChange={(e) => onChange({ gptImage2BaseModel: e.target.value })}
@@ -196,6 +201,7 @@ export function SectionNetwork({
           <FieldAnchor fieldId="routingSessionAffinityTTL">
             <Input
               label={t('config_management.visual.sections.network.session_affinity_ttl')}
+              labelExtra={<SponsorHintSpacer minTracks={10} />}
               placeholder="1h"
               value={values.routingSessionAffinityTTL}
               onChange={(e) => onChange({ routingSessionAffinityTTL: e.target.value })}

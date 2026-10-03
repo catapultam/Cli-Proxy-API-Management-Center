@@ -32,9 +32,9 @@
   height: 22px;
   flex-shrink: 0;
   border-radius: 7px;
-  border: 1px solid var(--border-color);
+  border: 1.5px solid var(--control-border);
   background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
-  color: var(--primary-contrast, #fff);
+  color: var(--action-fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -45,9 +45,10 @@
     transform $transition-fast;
 }
 
+// Ink, not a tinted ring: one affordance vocabulary with Select's hover/expanded
+// states below (darken the border; no colour, no box-shadow halo).
 .root:hover .box {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 16%, transparent);
+  border-color: var(--text-secondary);
 }
 
 .root:active .box {
@@ -64,15 +65,13 @@
 }
 
 .input:focus-visible + .box {
-  border-color: var(--primary-color);
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--primary-color) 16%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--primary-color) 50%, transparent);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .boxChecked {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
+  border-color: var(--action-bg);
+  background: var(--action-bg);
 }
 
 .boxChecked svg {

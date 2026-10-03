@@ -533,11 +533,7 @@
   font-size: 13px;
   line-height: 1.5;
 
-  &:focus {
-    border-color: var(--primary-color);
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
-  }
+  // Keyboard/click focus relies on the global `:focus-visible` outline (global.scss).
 }
 
 .fieldError {
@@ -583,5 +579,4 @@
       width: 100%;
     }
   }
-
 }

@@ -9,12 +9,15 @@
 
 // 左侧品牌展示区
 .brandPanel {
-  flex: 1;
+  flex: 0 0 42%;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  background: #000000;
+  background: var(--login-brand-bg);
+  // In dark theme the brand panel is close to the page background; the border
+  // keeps the split visible regardless.
+  border-right: 1px solid var(--border-color);
   padding: $spacing-2xl;
   position: relative;
   overflow: hidden;
@@ -51,7 +54,7 @@
 
 // 品牌大字
 .brandWord {
-  font-size: 14vw;
+  font-size: clamp(56px, 9vw, 160px);
   font-weight: 900;
   color: rgba(255, 255, 255, 0.9);
   letter-spacing: -0.02em;
@@ -79,11 +82,16 @@
     --target-opacity: 0.45;
     animation-delay: 0.6s;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    opacity: var(--target-opacity, 0.9);
+  }
 }
 
 // 右侧功能交互区
 .formPanel {
-  flex: 1;
+  flex: 1 1 58%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -110,12 +118,12 @@
 
 // Logo
 .logo {
-  width: 80px;
-  height: 80px;
+  width: 56px;
+  height: 56px;
   border-radius: $radius-lg;
   object-fit: cover;
-  box-shadow: var(--shadow-lg);
-  border: 3px solid var(--border-color);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
 }
 
 // 登录表单卡片
@@ -177,7 +185,7 @@
 // 连接信息框
 .connectionBox {
   background: var(--bg-secondary);
-  border: 1px dashed var(--border-color);
+  border: 1px solid var(--border-color);
   border-radius: $radius-md;
   padding: $spacing-md;
   display: flex;
@@ -190,6 +198,7 @@
   }
 
   .value {
+    font-family: $font-mono;
     font-weight: 700;
     color: var(--text-primary);
     word-break: break-all;
@@ -284,6 +293,10 @@
   border-radius: $radius-lg;
   box-shadow: $shadow-lg;
   animation: splashLogoPulse 1.5s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 }
 
 // 启动动画标题

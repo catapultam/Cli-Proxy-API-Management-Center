@@ -194,20 +194,22 @@
 }
 
 .countOk {
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
 .countFail {
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
 }
 
-/* 绿色只给活的流量：有计数才点亮 */
+/* Green only lights up for live traffic: only shows once there's a count.
+   Uses the badge text tokens, not --viz-success/--viz-failure (those are data-ink
+   tokens for dots/bars; at this text size they fall short of 4.5:1). */
 .countLive.countOk {
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 .countLive.countFail {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 /* ---------- ProviderStatusBar 注入样式（18 个契约类名） ---------- */
@@ -250,13 +252,13 @@
   font-size: 11.5px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: var(--text-quaternary);
+  color: var(--text-tertiary);
   min-width: 40px;
   text-align: right;
 }
 
 .statusRateHigh {
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 .statusRateMedium {
@@ -264,7 +266,7 @@
 }
 
 .statusRateLow {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 .statusTooltip {
@@ -312,11 +314,11 @@
 }
 
 .tooltipSuccess {
-  color: var(--viz-success);
+  color: var(--success-badge-text);
 }
 
 .tooltipFailure {
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
 }
 
 .tooltipRate {

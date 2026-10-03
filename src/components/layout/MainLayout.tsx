@@ -280,22 +280,22 @@ const THEME_CARDS: Array<{
     key: 'white',
     labelKey: 'theme.white',
     colors: {
-      bg: '#ffffff',
+      bg: '#fafafa',
       card: '#ffffff',
       border: '#e5e5e5',
       text: '#2d2a26',
-      textMuted: '#a29c95',
+      textMuted: '#686661',
     },
   },
   {
     key: 'light',
     labelKey: 'theme.light',
     colors: {
-      bg: '#faf9f5',
-      card: '#f0eee8',
+      bg: '#f3f1ec',
+      card: '#fffdf9',
       border: '#e3e1db',
       text: '#2d2a26',
-      textMuted: '#a29c95',
+      textMuted: '#686661',
     },
   },
   {

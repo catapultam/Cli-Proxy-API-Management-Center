@@ -45,14 +45,14 @@ export function SectionCommon({
             values={values}
             disabled={disabled}
             onChange={onChange}
-            topExtra={<SponsorHintSpacer />}
+            labelExtra={<SponsorHintSpacer minTracks={4} />}
           />
           <PortField
             values={values}
             disabled={disabled}
             onChange={onChange}
             error={portError}
-            topExtra={<SponsorHintSpacer />}
+            labelExtra={<SponsorHintSpacer minTracks={4} />}
           />
           <ProxyUrlField values={values} disabled={disabled} onChange={onChange} />
         </FieldGrid>

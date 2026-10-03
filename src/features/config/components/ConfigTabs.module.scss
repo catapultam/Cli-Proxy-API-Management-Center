@@ -10,6 +10,39 @@
   scrollbar-width: none;
   min-width: 0;
   flex: 1;
+  // The mask gives a cue that the strip is horizontally scrollable, fading only
+  // the side that still has tabs to scroll toward; scroll-padding keeps a
+  // tab scrolled into view (keyboard arrow nav, or the active-tab scroll-into-view
+  // effect — that logic lives in ConfigTabs.tsx, not in this file) clear of the
+  // fade so its focus ring is never dimmed. `--fade-start`/`--fade-end` default to
+  // 0 (no fade) and only widen to 20px once ConfigTabs.tsx's scroll listener marks
+  // that side as actually scrolled — otherwise the active first tab at scrollLeft 0
+  // would render faded (and its focus ring dimmed) for no reason.
+  --fade-start: 0px;
+  --fade-end: 0px;
+  scroll-padding-inline: 24px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-start),
+    #000 calc(100% - var(--fade-end)),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-start),
+    #000 calc(100% - var(--fade-end)),
+    transparent 100%
+  );
+
+  &[data-fade-start] {
+    --fade-start: 20px;
+  }
+
+  &[data-fade-end] {
+    --fade-end: 20px;
+  }
 
   &::-webkit-scrollbar {
     display: none;
@@ -57,7 +90,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
 }
@@ -103,7 +136,7 @@
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1.6;
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
   padding: 0 6px;
   border-radius: $radius-full;
   background: color-mix(in srgb, var(--viz-failure) 12%, transparent);

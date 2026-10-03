@@ -47,7 +47,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 
@@ -140,7 +140,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 
@@ -151,18 +151,18 @@
 }
 
 .emptyActionButtonPrimary {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  color: var(--primary-contrast);
+  border-color: var(--action-bg);
+  background: var(--action-bg);
+  color: var(--action-fg);
   font-weight: 600;
 
   &:hover:not(:disabled) {
-    border-color: var(--primary-hover);
-    background: var(--primary-hover);
+    border-color: var(--action-bg-hover);
+    background: var(--action-bg-hover);
   }
 
   &:focus-visible {
-    outline-color: var(--primary-color);
+    outline-color: var(--focus-ring);
   }
 }
 

@@ -95,6 +95,9 @@
 }
 
 /* ---------- idle：整块 body 即点击加载的落点 ---------- */
+/* QuotaCard already has its own border; this is just quiet text + an icon hinting
+   it's clickable — no second dashed border (nested cards are an anti-pattern).
+   Clickability comes through via cursor + hover color change + focus ring. */
 
 .idleBody {
   display: flex;
@@ -106,13 +109,12 @@
   min-height: 76px;
   padding: 12px 10px;
   cursor: pointer;
-  border: 1px dashed var(--border-color);
+  border: 0;
   border-radius: 10px;
   background: none;
   color: var(--text-tertiary);
   transition:
     transform var(--dur-press, 160ms) var(--ease-out-strong, ease-out),
-    border-color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out),
     color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out);
 
   &:disabled {
@@ -125,15 +127,13 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
   .idleBody:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
-    border-style: solid;
     color: var(--text-secondary);
   }
 }
@@ -218,7 +218,7 @@
 .errorStrip {
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--viz-failure);
+  color: var(--failure-badge-text);
   background: color-mix(in srgb, var(--viz-failure) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--viz-failure) 32%, transparent);
   border-radius: 9px;
@@ -266,7 +266,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }

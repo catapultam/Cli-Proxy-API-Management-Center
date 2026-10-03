@@ -189,7 +189,7 @@ export function ExcludedModelsPicker({
           >
             <span
               className={styles.meterFill}
-              style={{ width: `${stats.total ? (stats.excluded / stats.total) * 100 : 0}%` }}
+              style={{ transform: `scaleX(${stats.total ? stats.excluded / stats.total : 0})` }}
             />
           </span>
         ) : null}

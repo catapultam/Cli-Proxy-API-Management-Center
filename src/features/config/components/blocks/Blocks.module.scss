@@ -88,13 +88,12 @@
   justify-content: flex-end;
 }
 
+// Quiet text, not a box: this already sits inside a bordered card, so its own
+// border/background would read as a nested card-in-a-card.
 .emptyState {
-  border: 1px dashed var(--border-color);
-  border-radius: 10px;
   padding: 16px;
   color: var(--text-secondary);
   text-align: center;
-  background: transparent;
 }
 
 /* ---------- 规则卡 ---------- */

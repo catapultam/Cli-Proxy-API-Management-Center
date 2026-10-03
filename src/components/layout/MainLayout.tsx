@@ -11,12 +11,15 @@ import {
   type MouseEvent as ReactMouseEvent,
   type SyntheticEvent,
 } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
 import { authFilesApi, pluginsApi } from '@/services/api';
+import { accountApi } from '@/services/api/account';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { IconX } from '@/components/ui/icons';
 import {
   IconSidebarAuthFiles,
   IconSidebarConfig,
@@ -29,6 +32,7 @@ import {
   IconSidebarQuota,
   IconSidebarStore,
   IconSidebarSystem,
+  IconShield,
   IconChevronDown,
 } from '@/components/ui/icons';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -65,6 +69,7 @@ const sidebarIcons: Record<string, ReactNode> = {
   config: <IconSidebarConfig size={18} />,
   logs: <IconSidebarLogs size={18} />,
   system: <IconSidebarSystem size={18} />,
+  account: <IconShield size={18} />,
 };
 
 interface SidebarNavLinkItem {
@@ -310,11 +315,13 @@ export function MainLayout() {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const logout = useAuthStore((state) => state.logout);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
   const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
+  const authMode = useAuthStore((state) => state.authMode);
 
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
@@ -328,6 +335,11 @@ export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [authFilesCount, setAuthFilesCount] = useState<number | null>(null);
+  const [accountConfigured, setAccountConfigured] = useState<boolean | null>(null);
+  const [accountBannerDismissed, setAccountBannerDismissed] = useLocalStorage(
+    'cpa-account-setup-banner-dismissed',
+    false
+  );
   const [railTooltip, setRailTooltip] = useState<{
     targetID: string;
     label: string;
@@ -532,6 +544,30 @@ export function MainLayout() {
     };
   }, [apiBase, loadPluginResources, loadAuthFilesCount]);
 
+  // Nudge key-mode admins toward setting up an account, once the key proves it works today.
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || authMode !== 'key') {
+      setAccountConfigured(null);
+      return;
+    }
+    let cancelled = false;
+    accountApi
+      .get()
+      .then((data) => {
+        if (!cancelled) setAccountConfigured(data.configured);
+      })
+      .catch(() => {
+        // Old backend without session/account support, or a transient failure: stay quiet.
+        if (!cancelled) setAccountConfigured(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionStatus, authMode, apiBase]);
+
+  const showAccountSetupBanner =
+    authMode === 'key' && accountConfigured === false && !accountBannerDismissed;
+
   const pluginResourceGroups = pluginResources.reduce<
     Array<{ pluginID: string; pluginTitle: string; entries: PluginResourceEntry[] }>
   >((groups, resource) => {
@@ -680,6 +716,12 @@ export function MainLayout() {
               },
             ]
           : []),
+        {
+          path: '/account',
+          labelKey: 'nav.account',
+          metaKey: 'nav_meta.account',
+          icon: sidebarIcons.account,
+        },
         {
           path: '/system',
           labelKey: 'nav.system_info',
@@ -1202,6 +1244,25 @@ export function MainLayout() {
               isPluginResourcePage ? ' main-content-plugin-resource' : ''
             }`}
           >
+            {showAccountSetupBanner && (
+              <div className="account-setup-banner" role="status">
+                <span>{t('account.setup_banner_message')}</span>
+                <div className="account-setup-banner-actions">
+                  <Button size="sm" onClick={() => navigate('/account')}>
+                    {t('account.setup_banner_cta')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAccountBannerDismissed(true)}
+                    aria-label={t('common.close')}
+                    title={t('common.close')}
+                  >
+                    <IconX size={16} />
+                  </Button>
+                </div>
+              </div>
+            )}
             <PageTransition
               render={(location) => <MainRoutes location={location} />}
               getRouteOrder={getRouteOrder}

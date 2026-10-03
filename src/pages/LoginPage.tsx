@@ -1,12 +1,15 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
+import { Collapsible } from '@/components/ui/Collapsible';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
+import { sessionApi } from '@/services/api/session';
+import { assertionOptionsFromJSON, credentialToJSON, supportsPasskeys } from '@/services/passkey';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -19,6 +22,17 @@ import styles from './LoginPage.module.scss';
  * 将 API 错误转换为本地化的用户友好消息
  */
 type RedirectState = { from?: { pathname?: string } };
+
+function readRetryAfterSeconds(error: unknown): number | null {
+  const apiError = error as Partial<ApiError>;
+  const details = apiError.details;
+  if (details && typeof details === 'object' && 'retry_after' in details) {
+    const raw = (details as { retry_after?: unknown }).retry_after;
+    const seconds = typeof raw === 'number' ? raw : Number(raw);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds);
+  }
+  return null;
+}
 
 function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof LegacyBackendError) return t('login.error_legacy_backend');
@@ -59,6 +73,9 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
   if (status === 404) {
     return withHttpStatus(t('login.error_not_found'));
   }
+  if (status === 409) {
+    return withHttpStatus(t('login.error_no_account'));
+  }
   if (status && status >= 500) {
     return withHttpStatus(t('login.error_server'));
   }
@@ -92,20 +109,30 @@ export function LoginPage() {
   const setLanguage = useLanguageStore((state) => state.setLanguage);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const login = useAuthStore((state) => state.login);
+  const loginWithPassword = useAuthStore((state) => state.loginWithPassword);
+  const applySessionLogin = useAuthStore((state) => state.applySessionLogin);
   const restoreSession = useAuthStore((state) => state.restoreSession);
+  const refreshSessionStatus = useAuthStore((state) => state.refreshSessionStatus);
+  const sessionStatus = useAuthStore((state) => state.sessionStatus);
   const storedBase = useAuthStore((state) => state.apiBase);
   const storedKey = useAuthStore((state) => state.managementKey);
   const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
-  const [showCustomBase, setShowCustomBase] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberPassword, setRememberPassword] = useState(false);
+  const [useKeyForm, setUseKeyForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [autoLoading, setAutoLoading] = useState(true);
   const [autoLoginSuccess, setAutoLoginSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [retryAfter, setRetryAfter] = useState(0);
+  const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
   const languageOptions = useMemo(
@@ -152,13 +179,112 @@ export function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSubmit = useCallback(async () => {
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+    };
+  }, []);
+
+  const startRetryCountdown = useCallback((seconds: number) => {
+    if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+    setRetryAfter(seconds);
+    retryTimerRef.current = setInterval(() => {
+      setRetryAfter((current) => {
+        if (current <= 1) {
+          if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const baseToUse = apiBase ? normalizeApiBase(apiBase) : detectedBase;
+
+  // 当“Advanced”地址变更为其他后端时，重新探测该地址是否已配置账户登录
+  const handleApiBaseBlur = useCallback(() => {
+    void refreshSessionStatus(baseToUse);
+  }, [baseToUse, refreshSessionStatus]);
+
+  const showAccountForm = Boolean(sessionStatus?.account) && !useKeyForm;
+  const showPasskeyButton =
+    showAccountForm &&
+    Boolean(sessionStatus?.passkeys_available) &&
+    supportsPasskeys() &&
+    typeof window !== 'undefined' &&
+    (sessionStatus?.passkey_origins ?? []).includes(window.location.origin);
+
+  const handlePasswordSubmit = useCallback(async () => {
+    if (!username.trim() || !password) {
+      setError(t('login.error_required'));
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await loginWithPassword({ apiBase: baseToUse, username: username.trim(), password });
+      showNotification(t('common.connected_status'), 'success');
+      navigate('/', { replace: true });
+    } catch (err: unknown) {
+      const seconds = readRetryAfterSeconds(err);
+      if (seconds) startRetryCountdown(seconds);
+      const message = getLocalizedErrorMessage(err, t);
+      setError(message);
+      showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    baseToUse,
+    loginWithPassword,
+    navigate,
+    password,
+    showNotification,
+    startRetryCountdown,
+    t,
+    username,
+  ]);
+
+  const handlePasskeyLogin = useCallback(async () => {
+    setPasskeyLoading(true);
+    setError('');
+    try {
+      const begin = await sessionApi.passkeyBegin(baseToUse);
+      const options = assertionOptionsFromJSON(
+        begin.options as { publicKey: Record<string, unknown> }
+      );
+      const credential = await navigator.credentials.get(options);
+      if (!credential) throw new Error('No credential returned');
+      const credentialJSON = credentialToJSON(credential as PublicKeyCredential);
+      const response = await sessionApi.passkeyFinish(baseToUse, {
+        ceremony_id: begin.ceremony_id,
+        credential: credentialJSON,
+      });
+      applySessionLogin(baseToUse, response, 'passkey');
+      showNotification(t('common.connected_status'), 'success');
+      navigate('/', { replace: true });
+    } catch (err: unknown) {
+      if (
+        err instanceof DOMException &&
+        (err.name === 'NotAllowedError' || err.name === 'AbortError')
+      ) {
+        setError(t('login.error_passkey_cancelled'));
+      } else {
+        const message = getLocalizedErrorMessage(err, t);
+        setError(message);
+        showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
+      }
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }, [applySessionLogin, baseToUse, navigate, showNotification, t]);
+
+  const handleKeySubmit = useCallback(async () => {
     if (!managementKey.trim()) {
       setError(t('login.error_required'));
       return;
     }
 
-    const baseToUse = apiBase ? normalizeApiBase(apiBase) : detectedBase;
     setLoading(true);
     setError('');
     try {
@@ -176,25 +302,18 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }, [
-    apiBase,
-    detectedBase,
-    login,
-    managementKey,
-    navigate,
-    rememberPassword,
-    showNotification,
-    t,
-  ]);
+  }, [baseToUse, login, managementKey, navigate, rememberPassword, showNotification, t]);
+
+  const handleSubmit = showAccountForm ? handlePasswordSubmit : handleKeySubmit;
 
   const handleSubmitKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key === 'Enter' && !loading) {
+      if (event.key === 'Enter' && !loading && retryAfter === 0) {
         event.preventDefault();
         handleSubmit();
       }
     },
-    [loading, handleSubmit]
+    [loading, retryAfter, handleSubmit]
   );
 
   if (isAuthenticated && !autoLoading && !autoLoginSuccess) {
@@ -251,78 +370,157 @@ export function LoginPage() {
                 <div className={styles.subtitle}>{t('login.subtitle')}</div>
               </div>
 
-              <div className={styles.connectionBox}>
-                <div className={styles.label}>{t('login.connection_current')}</div>
-                <div className={styles.value}>{apiBase || detectedBase}</div>
-                <div className={styles.hint}>{t('login.connection_auto_hint')}</div>
-              </div>
+              {showAccountForm ? (
+                <>
+                  <Input
+                    autoFocus
+                    label={t('login.username_label')}
+                    placeholder={t('login.username_placeholder')}
+                    name="cpa-username"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onKeyDown={handleSubmitKeyDown}
+                  />
 
-              <div className={styles.toggleAdvanced}>
-                <SelectionCheckbox
-                  checked={showCustomBase}
-                  onChange={setShowCustomBase}
-                  ariaLabel={t('login.custom_connection_label')}
-                  label={t('login.custom_connection_label')}
-                  labelClassName={styles.toggleLabel}
-                />
-              </div>
+                  <Input
+                    label={t('login.password_label')}
+                    placeholder={t('login.password_placeholder')}
+                    type={showPassword ? 'text' : 'password'}
+                    name="cpa-password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={handleSubmitKeyDown}
+                    rightElement={
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? t('login.hide_key') : t('login.show_key')}
+                        title={showPassword ? t('login.hide_key') : t('login.show_key')}
+                      >
+                        {showPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
+                    }
+                  />
 
-              {showCustomBase && (
+                  {retryAfter > 0 && (
+                    <div className={styles.errorBox}>
+                      {t('login.retry_after_message', { seconds: retryAfter })}
+                    </div>
+                  )}
+
+                  <Button
+                    fullWidth
+                    onClick={handleSubmit}
+                    loading={loading}
+                    disabled={retryAfter > 0}
+                  >
+                    {loading ? t('login.submitting') : t('login.submit_button')}
+                  </Button>
+
+                  {showPasskeyButton && (
+                    <Button
+                      fullWidth
+                      variant="secondary"
+                      onClick={handlePasskeyLogin}
+                      loading={passkeyLoading}
+                      disabled={loading}
+                    >
+                      {t('login.passkey_button')}
+                    </Button>
+                  )}
+
+                  {error && <div className={styles.errorBox}>{error}</div>}
+
+                  <div className={styles.toggleAdvanced}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setUseKeyForm(true);
+                        setError('');
+                      }}
+                    >
+                      {t('login.use_key_instead')}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={styles.connectionBox}>
+                    <div className={styles.label}>{t('login.connection_current')}</div>
+                    <div className={styles.value}>{apiBase || detectedBase}</div>
+                    <div className={styles.hint}>{t('login.connection_auto_hint')}</div>
+                  </div>
+
+                  <Input
+                    autoFocus
+                    label={t('login.management_key_label')}
+                    placeholder={t('login.management_key_placeholder')}
+                    type={showKey ? 'text' : 'password'}
+                    name="cpa-management-key"
+                    autoComplete="current-password"
+                    value={managementKey}
+                    onChange={(e) => setManagementKey(e.target.value)}
+                    onKeyDown={handleSubmitKeyDown}
+                    rightElement={
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setShowKey((prev) => !prev)}
+                        aria-label={showKey ? t('login.hide_key') : t('login.show_key')}
+                        title={showKey ? t('login.hide_key') : t('login.show_key')}
+                      >
+                        {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
+                    }
+                  />
+
+                  <div className={styles.toggleAdvanced}>
+                    <SelectionCheckbox
+                      checked={rememberPassword}
+                      onChange={setRememberPassword}
+                      ariaLabel={t('login.remember_password_label')}
+                      label={t('login.remember_password_label')}
+                      labelClassName={styles.toggleLabel}
+                    />
+                  </div>
+
+                  <Button fullWidth onClick={handleSubmit} loading={loading}>
+                    {loading ? t('login.submitting') : t('login.submit_button')}
+                  </Button>
+
+                  {error && <div className={styles.errorBox}>{error}</div>}
+
+                  {Boolean(sessionStatus?.account) && useKeyForm && (
+                    <div className={styles.toggleAdvanced}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          setUseKeyForm(false);
+                          setError('');
+                        }}
+                      >
+                        {t('login.use_account_instead')}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <Collapsible label={t('login.advanced_toggle')}>
                 <Input
                   label={t('login.custom_connection_label')}
                   placeholder={t('login.custom_connection_placeholder')}
                   value={apiBase}
                   onChange={(e) => setApiBase(e.target.value)}
+                  onBlur={handleApiBaseBlur}
                   hint={t('login.custom_connection_hint')}
                 />
-              )}
-
-              <Input
-                autoFocus
-                label={t('login.management_key_label')}
-                placeholder={t('login.management_key_placeholder')}
-                type={showKey ? 'text' : 'password'}
-                name="cpa-management-key"
-                autoComplete="current-password"
-                value={managementKey}
-                onChange={(e) => setManagementKey(e.target.value)}
-                onKeyDown={handleSubmitKeyDown}
-                rightElement={
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setShowKey((prev) => !prev)}
-                    aria-label={
-                      showKey
-                        ? t('login.hide_key', { defaultValue: '隐藏密钥' })
-                        : t('login.show_key', { defaultValue: '显示密钥' })
-                    }
-                    title={
-                      showKey
-                        ? t('login.hide_key', { defaultValue: '隐藏密钥' })
-                        : t('login.show_key', { defaultValue: '显示密钥' })
-                    }
-                  >
-                    {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                  </button>
-                }
-              />
-
-              <div className={styles.toggleAdvanced}>
-                <SelectionCheckbox
-                  checked={rememberPassword}
-                  onChange={setRememberPassword}
-                  ariaLabel={t('login.remember_password_label')}
-                  label={t('login.remember_password_label')}
-                  labelClassName={styles.toggleLabel}
-                />
-              </div>
-
-              <Button fullWidth onClick={handleSubmit} loading={loading}>
-                {loading ? t('login.submitting') : t('login.submit_button')}
-              </Button>
-
-              {error && <div className={styles.errorBox}>{error}</div>}
+              </Collapsible>
             </div>
           </div>
         )}

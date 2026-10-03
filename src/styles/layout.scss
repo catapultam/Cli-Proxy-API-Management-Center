@@ -804,6 +804,27 @@
   }
 }
 
+.account-setup-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-md;
+  border: 1px solid color-mix(in srgb, var(--warning-color, #d97706) 40%, transparent);
+  background: color-mix(in srgb, var(--warning-color, #d97706) 12%, transparent);
+  color: var(--text-primary);
+  font-size: 14px;
+
+  .account-setup-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    flex-shrink: 0;
+  }
+}
+
 .main-content {
   flex: 1 0 auto;
   min-height: 100%;

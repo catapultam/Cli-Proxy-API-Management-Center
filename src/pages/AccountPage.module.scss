@@ -1,0 +1,50 @@
+.container {
+  width: 100%;
+}
+
+.pageTitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 $spacing-xl 0;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xl;
+}
+
+.sectionDescription {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 0 0 $spacing-md 0;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  max-width: 420px;
+}
+
+.originsInput {
+  width: 100%;
+  min-height: 84px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 13px;
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-md;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.actionRow {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}

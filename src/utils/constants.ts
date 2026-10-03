@@ -19,6 +19,7 @@ export const REQUEST_TIMEOUT_MS = 30 * 1000;
 export const CPA_VERSION_HEADER_KEYS = ['x-cpa-version'];
 export const CPA_BUILD_DATE_HEADER_KEYS = ['x-cpa-build-date'];
 export const CPA_SUPPORT_PLUGIN_HEADER_KEYS = ['x-cpa-support-plugin'];
+export const CPA_SESSION_REFRESH_HEADER_KEYS = ['x-cpa-session-refresh'];
 export const VERSION_HEADER_KEYS = [...CPA_VERSION_HEADER_KEYS, 'x-server-version'];
 export const BUILD_DATE_HEADER_KEYS = [...CPA_BUILD_DATE_HEADER_KEYS, 'x-server-build-date'];
 

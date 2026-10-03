@@ -1,5 +1,7 @@
 export * from './client';
 export * from './apiCall';
+export * from './account';
+export * from './session';
 export * from './antigravitySubscription';
 export * from './apiKeyUsage';
 export * from './config';

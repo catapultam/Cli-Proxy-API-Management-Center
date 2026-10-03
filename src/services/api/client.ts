@@ -8,13 +8,14 @@ import type { ApiClientConfig, ApiError } from '@/types';
 import {
   BUILD_DATE_HEADER_KEYS,
   CPA_BUILD_DATE_HEADER_KEYS,
+  CPA_SESSION_REFRESH_HEADER_KEYS,
   CPA_SUPPORT_PLUGIN_HEADER_KEYS,
   CPA_VERSION_HEADER_KEYS,
   REQUEST_TIMEOUT_MS,
   VERSION_HEADER_KEYS,
 } from '@/utils/constants';
 import { computeApiUrl } from '@/utils/connection';
-import { parseApiErrorResponse } from './apiError';
+import { toApiError } from './apiError';
 
 class ApiClient {
   private instance: AxiosInstance;
@@ -28,6 +29,9 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Required so the HttpOnly `cpa_mgmt_session` cookie is sent in session (cookie) auth
+      // mode. A no-op for key mode and for cross-origin bearer-session mode.
+      withCredentials: true,
     });
 
     this.setupInterceptors();
@@ -136,6 +140,15 @@ class ApiClient {
         const version = cpaVersion || this.readHeader(headers, VERSION_HEADER_KEYS);
         const buildDate = cpaBuildDate || this.readHeader(headers, BUILD_DATE_HEADER_KEYS);
         const supportsPlugin = this.readBooleanHeader(headers, CPA_SUPPORT_PLUGIN_HEADER_KEYS);
+        const sessionRefreshToken = this.readHeader(headers, CPA_SESSION_REFRESH_HEADER_KEYS);
+
+        // Sliding session renewal for bearer-session mode: the backend reissues the token
+        // once less than half its lifetime remains. Cookie mode renews via Set-Cookie instead.
+        if (sessionRefreshToken) {
+          window.dispatchEvent(
+            new CustomEvent('session-refresh', { detail: { token: sessionRefreshToken } })
+          );
+        }
 
         // 触发版本更新事件（后续通过 store 处理）
         if (version || buildDate) {
@@ -163,34 +176,14 @@ class ApiClient {
    * 错误处理
    */
   private handleError(error: unknown): ApiError {
-    if (axios.isAxiosError(error)) {
-      const responseData: unknown = error.response?.data;
-      const parsedError = parseApiErrorResponse(responseData, error.message);
-      const apiError = new Error(parsedError.message) as ApiError;
-      apiError.name = 'ApiError';
-      apiError.status = error.response?.status;
-      apiError.code = error.code;
-      apiError.apiCode = parsedError.apiCode;
-      apiError.details = responseData;
-      apiError.data = responseData;
+    const apiError = toApiError(error);
 
-      // 401 未授权 - 触发登出事件
-      if (error.response?.status === 401) {
-        window.dispatchEvent(new Event('unauthorized'));
-      }
-
-      return apiError;
+    // 401 未授权 - 触发登出事件
+    if (apiError.status === 401) {
+      window.dispatchEvent(new Event('unauthorized'));
     }
 
-    const fallbackMessage =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : 'Unknown error occurred';
-    const fallback = new Error(fallbackMessage) as ApiError;
-    fallback.name = 'ApiError';
-    return fallback;
+    return apiError;
   }
 
   /**

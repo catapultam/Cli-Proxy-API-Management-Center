@@ -17,6 +17,17 @@ export const computeApiUrl = (base: string): string => {
   return `${normalized}${MANAGEMENT_API_PREFIX}`;
 };
 
+/** Session cookies only work when the panel's API base shares the page's origin. */
+export const isSameOriginAsPage = (apiBase: string): boolean => {
+  const normalized = normalizeApiBase(apiBase);
+  if (!normalized || typeof window === 'undefined') return false;
+  try {
+    return new URL(normalized).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+};
+
 export const detectApiBaseFromLocation = (): string => {
   try {
     const { protocol, hostname, port } = window.location;

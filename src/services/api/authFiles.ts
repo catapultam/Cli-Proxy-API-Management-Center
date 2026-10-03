@@ -3,7 +3,7 @@
  */
 
 import { apiClient } from './client';
-import { getConfigValue, guardConfigConnection } from './configValue';
+import { getConfigValue, guardConfigConnection, isMissingConfigValue } from './configValue';
 import { isRecord } from '@/utils/helpers';
 import type { AuthFilesResponse } from '@/types/authFile';
 import type { OAuthModelAliasEntry } from '@/types';
@@ -556,9 +556,6 @@ function queueOauthMapWrite(path: string, write: () => Promise<void>): Promise<v
   return pending;
 }
 
-const isNotFoundError = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && 'status' in error && error.status === 404;
-
 /**
  * Rewrites one provider of a v8 OAuth map and leaves every other provider alone.
  * `plan` receives the provider's stored entries keyed by their YAML spelling and
@@ -601,8 +598,9 @@ async function updateOauthProviderMap(
       try {
         await apiClient.delete(`${path}/${encodeURIComponent(name)}`);
       } catch (error) {
-        // Already removed: the target state is reached.
-        if (!isNotFoundError(error)) throw error;
+        // Only the handler's own not_found means the key is already gone. A bare
+        // 404 (route missing, proxy in between) must not read as a success.
+        if (!isMissingConfigValue(error)) throw error;
       }
     }
   });

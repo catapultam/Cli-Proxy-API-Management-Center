@@ -212,6 +212,18 @@ describe('v8 management API contracts', () => {
     expect(server.del.mock.calls.length).toBe(deletes);
   });
 
+  test('OAuth deletes accept only the handler not_found; a bare 404 is an error', async () => {
+    mock('get', { codex: ['blocked'] });
+    const del = mock('delete');
+    del.mockRejectedValueOnce({ status: 404, apiCode: 'not_found' });
+    await authFilesApi.deleteOauthExcludedEntry('codex');
+    const routeMissing = { status: 404 };
+    del.mockRejectedValueOnce(routeMissing);
+    await expect(authFilesApi.deleteOauthExcludedEntry('codex')).rejects.toBe(routeMissing);
+    del.mockRejectedValueOnce(routeMissing);
+    await expect(authFilesApi.deleteOauthModelAlias('codex')).rejects.toBe(routeMissing);
+  });
+
   test('queued OAuth writes abort before reading after an ABA connection switch', async () => {
     const first = { apiBase: 'https://first.invalid', managementKey: 'fixture' };
     apiClient.setConfig(first);

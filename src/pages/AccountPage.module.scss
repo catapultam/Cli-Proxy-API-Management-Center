@@ -48,3 +48,12 @@
   gap: $spacing-sm;
   flex-wrap: wrap;
 }
+
+// Add Passkey button, its availability hint and the passkey list: spaced so the
+// button does not sit flush against the first list row.
+.passkeyStack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: $spacing-md;
+}

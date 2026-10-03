@@ -545,56 +545,58 @@ export function AccountPage() {
                   hint={t('account.current_password_required_hint')}
                 />
               )}
-              <div className={styles.actionRow}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddPasskey}
-                  loading={addingPasskey}
-                  disabled={!canAddPasskey}
-                  title={canAddPasskey ? undefined : addPasskeyBlockedHint}
-                >
-                  {t('account.add_passkey_button')}
-                </Button>
-              </div>
-              {!canAddPasskey && <div className="hint">{addPasskeyBlockedHint}</div>}
-              {account.passkeys.length === 0 ? (
-                <div className="hint">{t('account.no_passkeys')}</div>
-              ) : (
-                <div className="item-list">
-                  {account.passkeys.map((passkey) => (
-                    <div key={passkey.id} className="item-row">
-                      <div className="item-meta">
-                        <span className="item-title">{passkey.name}</span>
-                        <span className="item-subtitle">
-                          {t('account.created_label')}:{' '}
-                          {formatDateTimeValue(passkey.created_at, i18n.language) ||
-                            passkey.created_at}
-                        </span>
-                      </div>
-                      <div className="item-actions">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRenamePasskey(passkey)}
-                          loading={renamingId === passkey.id}
-                        >
-                          {t('common.edit')}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeletePasskey(passkey)}
-                          loading={deletingId === passkey.id}
-                          aria-label={t('common.delete')}
-                        >
-                          <IconTrash2 size={16} />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+              <div className={styles.passkeyStack}>
+                <div className={styles.actionRow}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleAddPasskey}
+                    loading={addingPasskey}
+                    disabled={!canAddPasskey}
+                    title={canAddPasskey ? undefined : addPasskeyBlockedHint}
+                  >
+                    {t('account.add_passkey_button')}
+                  </Button>
                 </div>
-              )}
+                {!canAddPasskey && <div className="hint">{addPasskeyBlockedHint}</div>}
+                {account.passkeys.length === 0 ? (
+                  <div className="hint">{t('account.no_passkeys')}</div>
+                ) : (
+                  <div className="item-list">
+                    {account.passkeys.map((passkey) => (
+                      <div key={passkey.id} className="item-row">
+                        <div className="item-meta">
+                          <span className="item-title">{passkey.name}</span>
+                          <span className="item-subtitle">
+                            {t('account.created_label')}:{' '}
+                            {formatDateTimeValue(passkey.created_at, i18n.language) ||
+                              passkey.created_at}
+                          </span>
+                        </div>
+                        <div className="item-actions">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRenamePasskey(passkey)}
+                            loading={renamingId === passkey.id}
+                          >
+                            {t('common.edit')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeletePasskey(passkey)}
+                            loading={deletingId === passkey.id}
+                            aria-label={t('common.delete')}
+                          >
+                            <IconTrash2 size={16} />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Card>
 
             <Card title={t('account.sign_out_all_title')}>

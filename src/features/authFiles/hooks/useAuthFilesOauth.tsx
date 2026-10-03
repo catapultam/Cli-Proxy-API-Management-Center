@@ -5,6 +5,13 @@ import { useNotificationStore } from '@/stores';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
 import type { AuthFileModelItem, OAuthConfigLoadError } from '@/features/authFiles/constants';
 import { normalizeProviderKey } from '@/features/authFiles/constants';
+import {
+  addAliasLink,
+  removeAliasFromMappings,
+  removeAliasLink,
+  renameAliasInMappings,
+  setAliasLinkFork,
+} from '@/features/authFiles/oauthAliasEdits';
 type ViewMode = 'diagram' | 'list';
 
 export type UseAuthFilesOauthResult = {
@@ -216,25 +223,8 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
             await loadExcluded();
             showNotification(t('oauth_excluded.delete_success'), 'success');
           } catch (err: unknown) {
-            try {
-              const current = await authFilesApi.getOauthExcludedModels();
-              const next: Record<string, string[]> = {};
-              Object.entries(current).forEach(([key, models]) => {
-                if (normalizeProviderKey(key) === providerKey) return;
-                next[key] = models;
-              });
-              await authFilesApi.replaceOauthExcludedModels(next);
-              await loadExcluded();
-              showNotification(t('oauth_excluded.delete_success'), 'success');
-            } catch (fallbackErr: unknown) {
-              const errorMessage =
-                fallbackErr instanceof Error
-                  ? fallbackErr.message
-                  : err instanceof Error
-                    ? err.message
-                    : '';
-              showNotification(`${t('oauth_excluded.delete_failed')}: ${errorMessage}`, 'error');
-            }
+            const errorMessage = err instanceof Error ? err.message : '';
+            showNotification(`${t('oauth_excluded.delete_failed')}: ${errorMessage}`, 'error');
           }
         },
       });
@@ -283,25 +273,8 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
       );
       const currentMappings = (providerKey ? modelAlias[providerKey] : null) ?? [];
 
-      const nameTrim = sourceModel.trim();
-      const aliasTrim = newAlias.trim();
-      const nameKey = nameTrim.toLowerCase();
-      const aliasKey = aliasTrim.toLowerCase();
-
-      if (
-        currentMappings.some(
-          (m) =>
-            (m.name ?? '').trim().toLowerCase() === nameKey &&
-            (m.alias ?? '').trim().toLowerCase() === aliasKey
-        )
-      ) {
-        return;
-      }
-
-      const nextMappings: OAuthModelAliasEntry[] = [
-        ...currentMappings,
-        { name: nameTrim, alias: aliasTrim, fork: true },
-      ];
+      const nextMappings = addAliasLink(currentMappings, sourceModel, newAlias);
+      if (!nextMappings) return;
 
       try {
         await authFilesApi.saveOauthModelAlias(normalizedProvider, nextMappings);
@@ -342,14 +315,8 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
             (key) => normalizeProviderKey(key) === normalizedProvider
           );
           const currentMappings = (providerKey ? modelAlias[providerKey] : null) ?? [];
-          const nameKey = nameTrim.toLowerCase();
-          const aliasKey = aliasTrim.toLowerCase();
-          const nextMappings = currentMappings.filter(
-            (m) =>
-              (m.name ?? '').trim().toLowerCase() !== nameKey ||
-              (m.alias ?? '').trim().toLowerCase() !== aliasKey
-          );
-          if (nextMappings.length === currentMappings.length) return;
+          const nextMappings = removeAliasLink(currentMappings, nameTrim, aliasTrim);
+          if (!nextMappings) return;
 
           try {
             if (nextMappings.length === 0) {
@@ -382,21 +349,8 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
         (key) => normalizeProviderKey(key) === normalizedProvider
       );
       const currentMappings = (providerKey ? modelAlias[providerKey] : null) ?? [];
-      const nameKey = sourceModel.trim().toLowerCase();
-      const aliasKey = alias.trim().toLowerCase();
-      let changed = false;
-
-      const nextMappings = currentMappings.map((m) => {
-        const mName = (m.name ?? '').trim().toLowerCase();
-        const mAlias = (m.alias ?? '').trim().toLowerCase();
-        if (mName === nameKey && mAlias === aliasKey) {
-          changed = true;
-          return fork ? { ...m, fork: true } : { ...m, fork: undefined };
-        }
-        return m;
-      });
-
-      if (!changed) return;
+      const nextMappings = setAliasLinkFork(currentMappings, sourceModel, alias, fork);
+      if (!nextMappings) return;
 
       try {
         await authFilesApi.saveOauthModelAlias(normalizedProvider, nextMappings);
@@ -420,10 +374,10 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
       const newTrim = newAlias.trim();
       if (!oldTrim || !newTrim || oldTrim === newTrim) return;
 
-      const oldKey = oldTrim.toLowerCase();
-      const providersToUpdate = Object.entries(modelAlias).filter(([_, mappings]) =>
-        mappings.some((m) => (m.alias ?? '').trim().toLowerCase() === oldKey)
-      );
+      const providersToUpdate = Object.entries(modelAlias).flatMap(([provider, mappings]) => {
+        const nextMappings = renameAliasInMappings(mappings, oldTrim, newTrim);
+        return nextMappings ? [[provider, nextMappings] as const] : [];
+      });
 
       if (providersToUpdate.length === 0) return;
 
@@ -432,12 +386,9 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
 
       try {
         const results = await Promise.allSettled(
-          providersToUpdate.map(([provider, mappings]) => {
-            const nextMappings = mappings.map((m) =>
-              (m.alias ?? '').trim().toLowerCase() === oldKey ? { ...m, alias: newTrim } : m
-            );
-            return authFilesApi.saveOauthModelAlias(provider, nextMappings);
-          })
+          providersToUpdate.map(([provider, nextMappings]) =>
+            authFilesApi.saveOauthModelAlias(provider, nextMappings)
+          )
         );
 
         const failures = results.filter(
@@ -471,10 +422,10 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
     (aliasName: string) => {
       const aliasTrim = aliasName.trim();
       if (!aliasTrim) return;
-      const aliasKey = aliasTrim.toLowerCase();
-      const providersToUpdate = Object.entries(modelAlias).filter(([_, mappings]) =>
-        mappings.some((m) => (m.alias ?? '').trim().toLowerCase() === aliasKey)
-      );
+      const providersToUpdate = Object.entries(modelAlias).flatMap(([provider, mappings]) => {
+        const nextMappings = removeAliasFromMappings(mappings, aliasTrim);
+        return nextMappings ? [[provider, nextMappings] as const] : [];
+      });
 
       if (providersToUpdate.length === 0) return;
 
@@ -499,10 +450,7 @@ export function useAuthFilesOauth(options: UseAuthFilesOauthOptions): UseAuthFil
 
           try {
             const results = await Promise.allSettled(
-              providersToUpdate.map(([provider, mappings]) => {
-                const nextMappings = mappings.filter(
-                  (m) => (m.alias ?? '').trim().toLowerCase() !== aliasKey
-                );
+              providersToUpdate.map(([provider, nextMappings]) => {
                 if (nextMappings.length === 0) {
                   return authFilesApi.deleteOauthModelAlias(provider);
                 }

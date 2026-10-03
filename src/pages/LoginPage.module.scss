@@ -225,11 +225,13 @@
 
 // 错误提示框
 .errorBox {
-  background: rgba($error-color, 0.1);
-  border: 1px solid rgba($error-color, 0.4);
+  // Theme tokens, not the compile-time $error-color: #c65746 text on this tint is
+  // ~3.7:1 in both themes. --failure-badge-text is the per-theme AA text red.
+  background: var(--bg-error-light);
+  border: 1px solid var(--failure-badge-border);
   border-radius: $radius-md;
   padding: $spacing-sm $spacing-md;
-  color: $error-color;
+  color: var(--failure-badge-text);
   font-size: 14px;
 }
 

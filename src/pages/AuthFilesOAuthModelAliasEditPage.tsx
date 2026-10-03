@@ -17,6 +17,7 @@ import {
   getModelAliasDraftSignature,
   isOAuthEditorDirty,
 } from '@/features/authFiles/oauthEditorState';
+import { hasNewAliasConflict, isUneditedAliasRow } from '@/features/authFiles/oauthAliasEdits';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
 import { generateId, getErrorMessage } from '@/utils/helpers';
 import styles from '@/features/authFiles/components/OAuthEditor.module.scss';
@@ -40,12 +41,13 @@ const normalizeMappingEntries = (
   if (!Array.isArray(entries) || entries.length === 0) {
     return [buildEmptyMappingEntry()];
   }
+  // Spread the entry so its raw config fields and key spelling reach the save.
   return entries.map((entry) => ({
+    ...entry,
     id: generateId(),
     name: entry.name ?? '',
     alias: entry.alias ?? '',
     fork: Boolean(entry.fork),
-    forceMapping: entry.forceMapping,
   }));
 };
 
@@ -339,29 +341,16 @@ export function AuthFilesOAuthModelAliasEditPage() {
       return;
     }
 
-    const seenAlias = new Set<string>();
-    let hasDuplicateAlias = false;
-    const normalized = mappings
-      .map((entry) => {
-        const name = String(entry.name ?? '').trim();
-        const alias = String(entry.alias ?? '').trim();
-        if (!name || !alias) return null;
-        const aliasKey = alias.toLowerCase();
-        if (seenAlias.has(aliasKey)) {
-          hasDuplicateAlias = true;
-          return null;
-        }
-        seenAlias.add(aliasKey);
-        const normalizedEntry: OAuthModelAliasEntry = { name, alias };
-        if (entry.fork) normalizedEntry.fork = true;
-        if (typeof entry.forceMapping === 'boolean') {
-          normalizedEntry.forceMapping = entry.forceMapping;
-        }
-        return normalizedEntry;
-      })
-      .filter(Boolean) as OAuthModelAliasEntry[];
+    // Rows keep every field they were read with; only edited values change. An
+    // unedited row is kept as stored even if incomplete, so a save never drops it.
+    const normalized = mappings.flatMap(({ id: _id, ...entry }): OAuthModelAliasEntry[] => {
+      const name = String(entry.name ?? '').trim();
+      const alias = String(entry.alias ?? '').trim();
+      if ((!name || !alias) && !isUneditedAliasRow(entry)) return [];
+      return [{ ...entry, name, alias }];
+    });
 
-    if (hasDuplicateAlias) {
+    if (hasNewAliasConflict(normalized)) {
       showNotification(t('oauth_model_alias.duplicate_alias'), 'error');
       return;
     }

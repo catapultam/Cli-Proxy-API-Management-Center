@@ -371,46 +371,59 @@ const normalizeOauthExcludedModels = (payload: unknown): Record<string, string[]
   return result;
 };
 
+const readAliasEntryName = (entry: Record<string, unknown>): string =>
+  String(entry.name ?? entry.id ?? entry.model ?? '').trim();
+
+const readAliasEntryForceMapping = (entry: Record<string, unknown>): boolean | undefined => {
+  const value = entry['force-mapping'] ?? entry.forceMapping;
+  return typeof value === 'boolean' ? value : undefined;
+};
+
+const defineOwn = <T>(target: Record<string, T>, key: string, value: T) => {
+  // defineProperty keeps keys such as `__proto__` as plain data.
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+};
+
+const hasOwn = (target: object, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(target, key);
+
+/**
+ * Groups alias entries by normalized provider for display. Every entry is kept,
+ * including several upstream names that share one alias, and each one remembers
+ * its raw config object and provider key spelling so a save can write it back
+ * unchanged.
+ */
 export const normalizeOauthModelAlias = (
   payload: unknown
 ): Record<string, OAuthModelAliasEntry[]> => {
   if (!payload || typeof payload !== 'object') return {};
 
-  const source = payload as Record<string, unknown>;
-
   const result: Record<string, OAuthModelAliasEntry[]> = {};
 
-  Object.entries(source as Record<string, unknown>).forEach(([channel, mappings]) => {
+  Object.entries(payload as Record<string, unknown>).forEach(([channel, mappings]) => {
     const key = normalizeOAuthProviderKey(String(channel ?? ''));
     if (!key) return;
     if (!Array.isArray(mappings)) return;
 
     const normalized = result[key] ?? [];
-    const seenAlias = new Set(normalized.map((entry) => entry.alias.toLowerCase()));
-    mappings
-      .map((item) => {
-        if (!item || typeof item !== 'object') return null;
-        const entry = item as Record<string, unknown>;
-        const name = String(entry.name ?? entry.id ?? entry.model ?? '').trim();
-        const alias = String(entry.alias ?? '').trim();
-        if (!name || !alias) return null;
-        const fork = entry.fork === true;
-        const forceMappingValue = entry['force-mapping'] ?? entry.forceMapping;
-        const normalizedEntry: OAuthModelAliasEntry = { name, alias };
-        if (fork) normalizedEntry.fork = true;
-        if (typeof forceMappingValue === 'boolean') {
-          normalizedEntry.forceMapping = forceMappingValue;
-        }
-        return normalizedEntry;
-      })
-      .filter(Boolean)
-      .forEach((entry) => {
-        const aliasEntry = entry as OAuthModelAliasEntry;
-        const aliasKey = aliasEntry.alias.toLowerCase();
-        if (seenAlias.has(aliasKey)) return;
-        seenAlias.add(aliasKey);
-        normalized.push(aliasEntry);
-      });
+    mappings.forEach((item) => {
+      if (!isRecord(item)) return;
+      const entry: OAuthModelAliasEntry = {
+        name: readAliasEntryName(item),
+        alias: String(item.alias ?? '').trim(),
+        raw: { ...item },
+        sourceKey: channel,
+      };
+      if (item.fork === true) entry.fork = true;
+      const forceMapping = readAliasEntryForceMapping(item);
+      if (forceMapping !== undefined) entry.forceMapping = forceMapping;
+      normalized.push(entry);
+    });
 
     if (normalized.length) {
       result[key] = normalized;
@@ -420,28 +433,110 @@ export const normalizeOauthModelAlias = (
   return result;
 };
 
+/**
+ * Serializes one alias entry. An entry read from the config starts from its raw
+ * object, and only fields whose UI value differs from what was read are
+ * rewritten. A new entry is built from the edited fields.
+ */
+export const serializeOauthModelAlias = (entry: OAuthModelAliasEntry): Record<string, unknown> => {
+  const raw = entry.raw;
+  if (!raw) {
+    const payload: Record<string, unknown> = { name: entry.name, alias: entry.alias };
+    if (entry.fork) payload.fork = true;
+    if (typeof entry.forceMapping === 'boolean') payload['force-mapping'] = entry.forceMapping;
+    return payload;
+  }
+
+  const payload: Record<string, unknown> = { ...raw };
+  if (entry.name !== readAliasEntryName(raw)) payload.name = entry.name;
+  if (entry.alias !== String(raw.alias ?? '').trim()) payload.alias = entry.alias;
+  if (Boolean(entry.fork) !== (raw.fork === true)) {
+    if (entry.fork) payload.fork = true;
+    else delete payload.fork;
+  }
+  if (entry.forceMapping !== readAliasEntryForceMapping(raw)) {
+    delete payload.forceMapping;
+    if (typeof entry.forceMapping === 'boolean') payload['force-mapping'] = entry.forceMapping;
+    else delete payload['force-mapping'];
+  }
+  return payload;
+};
+
 export const serializeOauthModelAliases = (
   aliases: OAuthModelAliasEntry[]
-): Array<Record<string, unknown>> =>
-  aliases.map((entry) => {
-    const payload: Record<string, unknown> = {
-      name: entry.name,
-      alias: entry.alias,
-    };
-    if (entry.fork) payload.fork = true;
-    if (typeof entry.forceMapping === 'boolean') {
-      payload['force-mapping'] = entry.forceMapping;
-    }
-    return payload;
+): Array<Record<string, unknown>> => aliases.map(serializeOauthModelAlias);
+
+/**
+ * Splits a provider's alias list back into the key spellings its entries were
+ * read from. New entries go to the spelling the config already uses for this
+ * provider, or to the normalized key when the provider is new.
+ */
+export const groupOauthModelAliasesBySpelling = (
+  provider: string,
+  spellings: string[],
+  aliases: OAuthModelAliasEntry[]
+): Record<string, Array<Record<string, unknown>>> => {
+  const key = normalizeOAuthProviderKey(provider);
+  const primary = spellings[0] ?? key;
+  const groups: Record<string, Array<Record<string, unknown>>> = {};
+  aliases.forEach((entry) => {
+    const spelling =
+      entry.sourceKey && normalizeOAuthProviderKey(entry.sourceKey) === key
+        ? entry.sourceKey
+        : primary;
+    if (!hasOwn(groups, spelling)) defineOwn(groups, spelling, []);
+    groups[spelling].push(serializeOauthModelAlias(entry));
   });
+  return groups;
+};
+
+const excludedModelKey = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+/**
+ * Applies a provider's edited exclusion list to the lists stored under each of
+ * its key spellings: kept models stay where they are (verbatim), removed ones are
+ * dropped everywhere, and new ones are appended under the first spelling.
+ */
+export const planOauthExcludedModels = (
+  provider: string,
+  current: Record<string, unknown>,
+  models: string[]
+): Record<string, unknown[]> => {
+  const key = normalizeOAuthProviderKey(provider);
+  const wanted = new Map<string, string>();
+  models.forEach((model) => {
+    const trimmed = String(model ?? '').trim();
+    if (trimmed && !wanted.has(trimmed.toLowerCase())) wanted.set(trimmed.toLowerCase(), trimmed);
+  });
+  const spellings = Object.keys(current).filter((name) => normalizeOAuthProviderKey(name) === key);
+  const next: Record<string, unknown[]> = {};
+  const placed = new Set<string>();
+  spellings.forEach((spelling) => {
+    const list = Array.isArray(current[spelling]) ? (current[spelling] as unknown[]) : [];
+    const kept = list.filter((item) => wanted.has(excludedModelKey(item)));
+    kept.forEach((item) => placed.add(excludedModelKey(item)));
+    if (kept.length) defineOwn(next, spelling, kept);
+  });
+  const added = Array.from(wanted.entries())
+    .filter(([modelKey]) => !placed.has(modelKey))
+    .map(([, model]) => model);
+  if (added.length) {
+    const primary = spellings[0] ?? key;
+    defineOwn(next, primary, [...(hasOwn(next, primary) ? next[primary] : []), ...added]);
+  }
+  return next;
+};
 
 const OAUTH_MODEL_ALIAS_ENDPOINT = '/config/oauth/model-alias';
 const OAUTH_EXCLUDED_MODELS_ENDPOINT = '/config/oauth/excluded-models';
 
 const oauthMapWrites = new Map<string, Promise<void>>();
 
-// v8 replaces a whole provider map. Serialize local read/modify/write operations
-// so a batch cannot overwrite another provider's changes with an older snapshot.
+// Serialize local read/modify/write operations per map so two edits cannot
+// interleave their reads and writes.
 function queueOauthMapWrite(path: string, write: () => Promise<void>): Promise<void> {
   const assertConnection = guardConfigConnection();
   const queueKey = `${apiClient.getConnectionRevision()}:${path}`;
@@ -461,28 +556,55 @@ function queueOauthMapWrite(path: string, write: () => Promise<void>): Promise<v
   return pending;
 }
 
-async function updateOauthProviderMap(path: string, provider: string, value?: unknown) {
+const isNotFoundError = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'status' in error && error.status === 404;
+
+/**
+ * Rewrites one provider of a v8 OAuth map and leaves every other provider alone.
+ * `plan` receives the provider's stored entries keyed by their YAML spelling and
+ * returns the next ones. Changed spellings go out in one PATCH of the map (v8
+ * replaces lists whole and leaves untouched siblings, comments included, as
+ * stored); spellings the plan drops are removed with DELETE, which also prunes
+ * the map when it ends up empty.
+ */
+async function updateOauthProviderMap(
+  path: string,
+  provider: string,
+  plan: (current: Record<string, unknown>) => Record<string, unknown>
+) {
   const key = normalizeOAuthProviderKey(provider);
   if (!key) throw new Error('Invalid OAuth provider');
   return queueOauthMapWrite(path, async () => {
     const assertConnection = guardConfigConnection();
-    const current = await getConfigValue<unknown>(path, {});
+    const stored = await getConfigValue<unknown>(path, {});
     assertConnection();
-    if (current != null && !isRecord(current)) throw new Error('Invalid OAuth configuration map');
-    // v8 reads preserve YAML key spelling. The UI groups normalized providers, so
-    // remove every spelling of this provider, preserving unrelated entries verbatim.
-    const next = Object.fromEntries(
-      Object.entries(current ?? {}).filter(([name]) => normalizeOAuthProviderKey(name) !== key)
-    );
-    if (value !== undefined) {
-      Object.defineProperty(next, key, {
-        value,
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      });
+    if (stored != null && !isRecord(stored)) throw new Error('Invalid OAuth configuration map');
+    // v8 reads preserve YAML key spelling, and the UI groups by normalized
+    // provider, so the plan sees every spelling of this provider.
+    const current: Record<string, unknown> = {};
+    Object.entries(stored ?? {}).forEach(([name, value]) => {
+      if (normalizeOAuthProviderKey(name) === key) defineOwn(current, name, value);
+    });
+    const next = plan(current);
+    const patch: Record<string, unknown> = {};
+    Object.entries(next).forEach(([name, value]) => {
+      if (hasOwn(current, name) && JSON.stringify(current[name]) === JSON.stringify(value)) return;
+      defineOwn(patch, name, value);
+    });
+    if (Object.keys(patch).length) {
+      assertConnection();
+      await apiClient.patch(path, patch);
     }
-    await apiClient.put(path, next);
+    for (const name of Object.keys(current)) {
+      if (hasOwn(next, name)) continue;
+      assertConnection();
+      try {
+        await apiClient.delete(`${path}/${encodeURIComponent(name)}`);
+      } catch (error) {
+        // Already removed: the target state is reached.
+        if (!isNotFoundError(error)) throw error;
+      }
+    }
   });
 }
 
@@ -606,42 +728,35 @@ export const authFilesApi = {
     return blob.text();
   },
 
-  // OAuth 排除模型
+  // OAuth excluded models
   async getOauthExcludedModels(): Promise<Record<string, string[]>> {
     const data = await getConfigValue(OAUTH_EXCLUDED_MODELS_ENDPOINT, {});
     return normalizeOauthExcludedModels(data);
   },
 
   saveOauthExcludedModels: (provider: string, models: string[]) =>
-    updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider, models),
+    updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider, (current) =>
+      planOauthExcludedModels(provider, current, models)
+    ),
 
   deleteOauthExcludedEntry: (provider: string) =>
-    updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider),
+    updateOauthProviderMap(OAUTH_EXCLUDED_MODELS_ENDPOINT, provider, () => ({})),
 
-  replaceOauthExcludedModels: (map: Record<string, string[]>) =>
-    queueOauthMapWrite(OAUTH_EXCLUDED_MODELS_ENDPOINT, async () => {
-      await apiClient.put(OAUTH_EXCLUDED_MODELS_ENDPOINT, normalizeOauthExcludedModels(map));
-    }),
-
-  // OAuth 模型别名
+  // OAuth model aliases
   async getOauthModelAlias(): Promise<Record<string, OAuthModelAliasEntry[]>> {
     const data = await getConfigValue(OAUTH_MODEL_ALIAS_ENDPOINT, {});
     return normalizeOauthModelAlias(data);
   },
 
-  saveOauthModelAlias: async (channel: string, aliases: OAuthModelAliasEntry[]) => {
-    const normalizedChannel = normalizeOAuthProviderKey(String(channel ?? ''));
-    const normalizedAliases =
-      normalizeOauthModelAlias({ [normalizedChannel]: aliases })[normalizedChannel] ?? [];
-    await updateOauthProviderMap(
-      OAUTH_MODEL_ALIAS_ENDPOINT,
-      normalizedChannel,
-      serializeOauthModelAliases(normalizedAliases)
-    );
-  },
+  // Writes the provider's whole alias list. Entries keep their raw fields and key
+  // spelling; nothing is deduplicated on this path.
+  saveOauthModelAlias: (channel: string, aliases: OAuthModelAliasEntry[]) =>
+    updateOauthProviderMap(OAUTH_MODEL_ALIAS_ENDPOINT, channel, (current) =>
+      groupOauthModelAliasesBySpelling(channel, Object.keys(current), aliases)
+    ),
 
   deleteOauthModelAlias: (channel: string) =>
-    updateOauthProviderMap(OAUTH_MODEL_ALIAS_ENDPOINT, channel),
+    updateOauthProviderMap(OAUTH_MODEL_ALIAS_ENDPOINT, channel, () => ({})),
 
   // 获取认证凭证支持的模型
   async getModelsForAuthFile(

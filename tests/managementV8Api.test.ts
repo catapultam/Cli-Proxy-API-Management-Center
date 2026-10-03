@@ -42,6 +42,8 @@ describe('v8 management API contracts', () => {
     apiClient.setConfig(first);
     const get = mock('get');
     const put = mock('put');
+    const patch = mock('patch');
+    const del = mock('delete');
     try {
       for (const operation of [
         () => apiKeysApi.update(0, 'new'),
@@ -61,79 +63,118 @@ describe('v8 management API contracts', () => {
         await expect(operation()).rejects.toMatchObject({ name: 'AbortError' });
       }
       expect(put).not.toHaveBeenCalled();
+      expect(patch).not.toHaveBeenCalled();
+      expect(del).not.toHaveBeenCalled();
     } finally {
       apiClient.setConfig({ apiBase: '', managementKey: '' });
     }
   });
 
-  test('OAuth configuration reads direct maps and writes direct provider lists', async () => {
+  // Mirrors the v8 handler for one OAuth map: GET returns the stored map, PATCH
+  // merges provider keys (lists replaced whole), DELETE removes one key or 404s.
+  const fakeOauthMap = (initial: Record<string, unknown>) => {
+    const state = { stored: structuredClone(initial) };
+    const get = mock('get').mockImplementation(async () => structuredClone(state.stored));
+    const patch = mock('patch').mockImplementation(async (_path, value) => {
+      state.stored = { ...state.stored, ...structuredClone(value as Record<string, unknown>) };
+      return {};
+    });
+    const del = mock('delete').mockImplementation(async (path) => {
+      const key = decodeURIComponent(String(path).split('/').pop() ?? '');
+      if (!Object.prototype.hasOwnProperty.call(state.stored, key)) {
+        throw { status: 404, apiCode: 'not_found' };
+      }
+      const next = { ...state.stored };
+      delete next[key];
+      state.stored = next;
+      return {};
+    });
+    return { state, get, patch, del };
+  };
+
+  test('OAuth configuration reads direct maps and writes one provider at a time', async () => {
     const get = mock('get', {
       codex: [{ name: 'source', alias: 'alias', 'force-mapping': false }],
     });
     const put = mock('put');
+    const patch = mock('patch');
+    const del = mock('delete');
     expect(await authFilesApi.getOauthModelAlias()).toEqual({
-      codex: [{ name: 'source', alias: 'alias', forceMapping: false }],
+      codex: [
+        {
+          name: 'source',
+          alias: 'alias',
+          forceMapping: false,
+          raw: { name: 'source', alias: 'alias', 'force-mapping': false },
+          sourceKey: 'codex',
+        },
+      ],
     });
     expect(get).toHaveBeenLastCalledWith('/config/oauth/model-alias');
     await authFilesApi.saveOauthModelAlias('codex', [
-      { name: 'source', alias: 'alias', forceMapping: false },
+      { name: 'source', alias: 'alias', forceMapping: true },
     ]);
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/model-alias', {
-      codex: [{ name: 'source', alias: 'alias', 'force-mapping': false }],
+    expect(patch).toHaveBeenLastCalledWith('/config/oauth/model-alias', {
+      codex: [{ name: 'source', alias: 'alias', 'force-mapping': true }],
     });
     get.mockResolvedValue({ codex: ['blocked'] });
     expect(await authFilesApi.getOauthExcludedModels()).toEqual({ codex: ['blocked'] });
     expect(get).toHaveBeenLastCalledWith('/config/oauth/excluded-models');
-    await authFilesApi.saveOauthExcludedModels('codex', ['blocked']);
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/excluded-models', { codex: ['blocked'] });
+    await authFilesApi.saveOauthExcludedModels('codex', ['blocked', 'new']);
+    expect(patch).toHaveBeenLastCalledWith('/config/oauth/excluded-models', {
+      codex: ['blocked', 'new'],
+    });
     await authFilesApi.deleteOauthModelAlias('codex');
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/model-alias', {});
+    expect(del).toHaveBeenLastCalledWith('/config/oauth/model-alias/codex');
     await authFilesApi.deleteOauthExcludedEntry('codex');
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/excluded-models', {});
+    expect(del).toHaveBeenLastCalledWith('/config/oauth/excluded-models/codex');
+    // An unchanged list is not rewritten, and nothing ever replaces the whole map.
+    const patches = patch.mock.calls.length;
+    await authFilesApi.saveOauthExcludedModels('codex', ['blocked']);
+    expect(patch.mock.calls.length).toBe(patches);
+    expect(put).not.toHaveBeenCalled();
   });
 
-  test('OAuth writes remove case/whitespace aliases without losing unrelated raw entries', async () => {
-    const other = [{ name: 'other', alias: 'other', future: 'preserve' }];
+  test('OAuth writes keep stored key spellings and never send other providers', async () => {
+    const other = [{ name: 'other', alias: 'other', 'display-name': 'Other' }];
     const get = mock('get', {
       ' Codex ': [{ name: 'old', alias: 'old' }],
       codex: [{ name: 'duplicate', alias: 'duplicate' }],
       claude: other,
     });
-    const put = mock('put');
+    const patch = mock('patch');
+    const del = mock('delete');
     await authFilesApi.saveOauthModelAlias('codex', [{ name: 'new', alias: 'new' }]);
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/model-alias', {
-      claude: other,
-      codex: [{ name: 'new', alias: 'new' }],
+    expect(patch).toHaveBeenLastCalledWith('/config/oauth/model-alias', {
+      ' Codex ': [{ name: 'new', alias: 'new' }],
     });
+    expect(del).toHaveBeenLastCalledWith('/config/oauth/model-alias/codex');
+    expect(del).toHaveBeenCalledTimes(1);
     await authFilesApi.deleteOauthModelAlias('codex');
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/model-alias', { claude: other });
+    expect(del.mock.calls.slice(1).map(([path]) => path)).toEqual([
+      '/config/oauth/model-alias/%20Codex%20',
+      '/config/oauth/model-alias/codex',
+    ]);
     get.mockResolvedValue({ ' Codex ': ['a'], CODEX: ['b'], claude: ['keep'] });
-    await authFilesApi.saveOauthExcludedModels('codex', ['new']);
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/excluded-models', {
-      claude: ['keep'],
-      codex: ['new'],
+    await authFilesApi.saveOauthExcludedModels('codex', ['b', 'new']);
+    expect(patch).toHaveBeenLastCalledWith('/config/oauth/excluded-models', {
+      ' Codex ': ['new'],
     });
-    await authFilesApi.deleteOauthExcludedEntry('codex');
-    expect(put).toHaveBeenLastCalledWith('/config/oauth/excluded-models', { claude: ['keep'] });
+    expect(del).toHaveBeenCalledTimes(3);
   });
 
   test('concurrent OAuth alias renames and deletes preserve every provider update', async () => {
-    let stored: Record<string, unknown> = {
+    const server = fakeOauthMap({
       codex: [{ name: 'codex-model', alias: 'shared' }],
       claude: [{ name: 'claude-model', alias: 'shared' }],
       gemini: [{ name: 'untouched', alias: 'keep', future: true }],
-    };
-    mock('get').mockImplementation(async () => structuredClone(stored));
-    mock('put').mockImplementation(async (_path, value) => {
-      stored = structuredClone(value) as Record<string, unknown>;
-      return {};
     });
 
     await Promise.all([
       authFilesApi.saveOauthModelAlias('codex', [{ name: 'codex-model', alias: 'renamed' }]),
       authFilesApi.saveOauthModelAlias('claude', [{ name: 'claude-model', alias: 'renamed' }]),
     ]);
-    expect(stored).toEqual({
+    expect(server.state.stored).toEqual({
       codex: [{ name: 'codex-model', alias: 'renamed' }],
       claude: [{ name: 'claude-model', alias: 'renamed' }],
       gemini: [{ name: 'untouched', alias: 'keep', future: true }],
@@ -143,31 +184,32 @@ describe('v8 management API contracts', () => {
       authFilesApi.deleteOauthModelAlias('codex'),
       authFilesApi.deleteOauthModelAlias('claude'),
     ]);
-    expect(stored).toEqual({ gemini: [{ name: 'untouched', alias: 'keep', future: true }] });
+    expect(server.state.stored).toEqual({
+      gemini: [{ name: 'untouched', alias: 'keep', future: true }],
+    });
   });
 
   test('concurrent excluded-model writes preserve changes and recover after a failed write', async () => {
-    let stored: Record<string, unknown> = { codex: ['old'], claude: ['old'] };
-    mock('get').mockImplementation(async () => structuredClone(stored));
-    const put = mock('put').mockImplementation(async (_path, value) => {
-      stored = structuredClone(value) as Record<string, unknown>;
-      return {};
-    });
+    const server = fakeOauthMap({ codex: ['old'], claude: ['old'] });
     await Promise.all([
       authFilesApi.saveOauthExcludedModels('codex', ['new']),
       authFilesApi.saveOauthExcludedModels('claude', ['new']),
     ]);
-    expect(stored).toEqual({ codex: ['new'], claude: ['new'] });
+    expect(server.state.stored).toEqual({ codex: ['new'], claude: ['new'] });
 
-    put.mockRejectedValueOnce(new Error('write failed'));
+    server.del.mockRejectedValueOnce(new Error('write failed'));
     const results = await Promise.allSettled([
       authFilesApi.deleteOauthExcludedEntry('codex'),
       authFilesApi.deleteOauthExcludedEntry('claude'),
     ]);
     expect(results.map((result) => result.status)).toEqual(['rejected', 'fulfilled']);
-    expect(stored).toEqual({ codex: ['new'] });
+    expect(server.state.stored).toEqual({ codex: ['new'] });
     await authFilesApi.deleteOauthExcludedEntry('codex');
-    expect(stored).toEqual({});
+    expect(server.state.stored).toEqual({});
+    // Deleting a provider that is already gone sends nothing.
+    const deletes = server.del.mock.calls.length;
+    await authFilesApi.deleteOauthExcludedEntry('codex');
+    expect(server.del.mock.calls.length).toBe(deletes);
   });
 
   test('queued OAuth writes abort before reading after an ABA connection switch', async () => {
@@ -181,11 +223,15 @@ describe('v8 management API contracts', () => {
     const readStarted = new Promise<void>((resolve) => {
       notifyRead = resolve;
     });
-    const get = mock('get').mockImplementationOnce(async () => {
-      notifyRead();
-      return blockedRead;
-    });
+    const get = mock('get', { codex: [{ name: 'a', alias: 'b' }] }).mockImplementationOnce(
+      async () => {
+        notifyRead();
+        return blockedRead;
+      }
+    );
     const put = mock('put');
+    const patch = mock('patch');
+    const del = mock('delete');
     try {
       const results = Promise.allSettled([
         authFilesApi.deleteOauthModelAlias('codex'),
@@ -194,15 +240,18 @@ describe('v8 management API contracts', () => {
       await readStarted;
       apiClient.setConfig({ apiBase: 'https://second.invalid', managementKey: 'other' });
       apiClient.setConfig(first);
-      releaseRead({});
+      releaseRead({ codex: [{ name: 'a', alias: 'b' }], claude: [{ name: 'c', alias: 'd' }] });
       for (const result of await results) {
         expect(result.status).toBe('rejected');
         if (result.status === 'rejected') expect(result.reason.name).toBe('AbortError');
       }
       expect(get).toHaveBeenCalledTimes(1);
       expect(put).not.toHaveBeenCalled();
+      expect(patch).not.toHaveBeenCalled();
+      expect(del).not.toHaveBeenCalled();
       await authFilesApi.deleteOauthModelAlias('codex');
-      expect(put).toHaveBeenCalledTimes(1);
+      expect(del).toHaveBeenCalledTimes(1);
+      expect(del).toHaveBeenLastCalledWith('/config/oauth/model-alias/codex');
     } finally {
       releaseRead({});
       apiClient.setConfig({ apiBase: '', managementKey: '' });
@@ -226,12 +275,16 @@ describe('v8 management API contracts', () => {
       }
     }
     const put = mock('put');
+    const patch = mock('patch');
+    const del = mock('delete');
+    // A missing map has nothing to delete: no write is sent.
     get.mockRejectedValue({ status: 404, apiCode: 'not_found' });
     await authFilesApi.deleteOauthModelAlias('codex');
-    expect(put).toHaveBeenCalledWith('/config/oauth/model-alias', {});
     get.mockRejectedValue({ status: 405 });
     await expect(authFilesApi.deleteOauthModelAlias('codex')).rejects.toEqual({ status: 405 });
-    expect(put).toHaveBeenCalledTimes(1);
+    expect(put).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
   });
 
   test('OAuth maps UI anthropic to claude and plugins use the shared login route', async () => {

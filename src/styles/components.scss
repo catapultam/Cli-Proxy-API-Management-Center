@@ -1,4 +1,3 @@
-@use 'sass:color';
 @use './variables.scss' as *;
 
 .btn {
@@ -63,13 +62,21 @@
     }
   }
 
+  // White on --error-color (#c65746) is only 4.33:1, so the filled danger button
+  // uses darker steps of the same red: 5.4:1 at rest, darker on hover and press.
   &.btn-danger {
-    background-color: $error-color;
-    border-color: $error-color;
+    background-color: var(--danger-action-bg);
+    border-color: var(--danger-action-bg);
     color: #fff;
 
-    &:hover {
-      background-color: color.adjust($error-color, $lightness: -5%);
+    &:hover:not(:disabled) {
+      background-color: var(--danger-action-bg-hover);
+      border-color: var(--danger-action-bg-hover);
+    }
+
+    &:active:not(:disabled) {
+      background-color: var(--danger-action-bg-active);
+      border-color: var(--danger-action-bg-active);
     }
   }
 

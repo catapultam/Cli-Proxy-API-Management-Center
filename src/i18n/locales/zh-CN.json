@@ -101,7 +101,10 @@
     "passkey_button": "使用通行密钥登录",
     "use_key_instead": "改用管理密钥登录",
     "use_account_instead": "改用用户名和密码登录",
-    "retry_after_message": "尝试次数过多，请在 {{seconds}} 秒后重试"
+    "retry_after_message": "尝试次数过多，请在 {{seconds}} 秒后重试",
+    "error_server_unreachable": "无法连接服务器。请检查地址和网络后重试。",
+    "retry_button": "重试",
+    "error_rate_limited": "尝试次数过多，请稍后再试。"
   },
   "header": {
     "refresh_all": "刷新全部",
@@ -1841,7 +1844,12 @@
     "sign_out_all_failed": "退出所有设备失败",
     "signed_out_all": "已退出所有设备",
     "setup_banner_message": "设置用户名和密码后，就不再需要管理密钥了",
-    "setup_banner_cta": "设置账户"
+    "setup_banner_cta": "设置账户",
+    "error_rate_limited": "尝试次数过多，请稍后再试。",
+    "passkey_ceremony_expired": "通行密钥请求已过期或已被使用，请重试。",
+    "retry_button": "重试",
+    "rp_id_change_warning": "更改 Relying Party ID 会使现有通行密钥失效，需要重新添加。",
+    "current_password_required_hint": "使用会话登录时，需要输入当前密码以确认此更改。"
   },
   "notification": {
     "trusted_proxies_restart_required": "可信代理配置已保存，重启后端后生效。",

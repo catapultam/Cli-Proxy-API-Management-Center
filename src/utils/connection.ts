@@ -17,12 +17,31 @@ export const computeApiUrl = (base: string): string => {
   return `${normalized}${MANAGEMENT_API_PREFIX}`;
 };
 
-/** Session cookies only work when the panel's API base shares the page's origin. */
+/** True when the API base shares the page's origin (regardless of any deployment path prefix). */
 export const isSameOriginAsPage = (apiBase: string): boolean => {
   const normalized = normalizeApiBase(apiBase);
   if (!normalized || typeof window === 'undefined') return false;
   try {
     return new URL(normalized).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The session cookie's `Path` is hardcoded by the backend to `/v8/management` (not prefixed by
+ * any deployment path). A request to a non-root apiBase, e.g. `https://host/gateway`, resolves to
+ * `https://host/gateway/v8/management/...`, whose path does not start with `/v8/management`, so
+ * the browser never sends (or even reliably stores) the cookie there. Cookie mode is therefore
+ * only viable when the apiBase is same-origin AND has no path prefix at all.
+ */
+export const isCookieEligible = (apiBase: string): boolean => {
+  const normalized = normalizeApiBase(apiBase);
+  if (!normalized || typeof window === 'undefined') return false;
+  try {
+    const url = new URL(normalized);
+    const pathIsRoot = url.pathname === '' || url.pathname === '/';
+    return pathIsRoot && url.origin === window.location.origin;
   } catch {
     return false;
   }

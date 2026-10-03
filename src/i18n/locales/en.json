@@ -101,7 +101,10 @@
     "passkey_button": "Sign in with passkey",
     "use_key_instead": "Use management key instead",
     "use_account_instead": "Use username and password instead",
-    "retry_after_message": "Too many attempts. Try again in {{seconds}}s"
+    "retry_after_message": "Too many attempts. Try again in {{seconds}}s",
+    "error_server_unreachable": "Cannot reach the server. Check the address and your connection, then retry.",
+    "retry_button": "Retry",
+    "error_rate_limited": "Too many attempts. Try again shortly."
   },
   "header": {
     "refresh_all": "Refresh All",
@@ -1843,7 +1846,12 @@
     "sign_out_all_failed": "Failed to sign out all devices",
     "signed_out_all": "Signed out of all devices",
     "setup_banner_message": "Set up a username and password so you don't need the management key",
-    "setup_banner_cta": "Set up account"
+    "setup_banner_cta": "Set up account",
+    "error_rate_limited": "Too many attempts. Try again shortly.",
+    "passkey_ceremony_expired": "The passkey request expired or was already used. Try again.",
+    "retry_button": "Retry",
+    "rp_id_change_warning": "Changing the Relying Party ID orphans existing passkeys: they stop working and should be re-added.",
+    "current_password_required_hint": "Required to confirm this change while signed in with a session."
   },
   "notification": {
     "trusted_proxies_restart_required": "Trusted proxy settings saved. Restart the backend to apply them.",

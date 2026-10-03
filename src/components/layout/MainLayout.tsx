@@ -336,6 +336,8 @@ export function MainLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [authFilesCount, setAuthFilesCount] = useState<number | null>(null);
   const [accountConfigured, setAccountConfigured] = useState<boolean | null>(null);
+  const [accountRoutesMissing, setAccountRoutesMissing] = useState(false);
+  const sessionRoutesSupported = useAuthStore((state) => state.sessionRoutesSupported);
   const [accountBannerDismissed, setAccountBannerDismissed] = useLocalStorage(
     'cpa-account-setup-banner-dismissed',
     false
@@ -554,16 +556,22 @@ export function MainLayout() {
     accountApi
       .get()
       .then((data) => {
-        if (!cancelled) setAccountConfigured(data.configured);
+        if (cancelled) return;
+        setAccountConfigured(data.configured);
+        setAccountRoutesMissing(false);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         // Old backend without session/account support, or a transient failure: stay quiet.
-        if (!cancelled) setAccountConfigured(null);
+        if (cancelled) return;
+        setAccountConfigured(null);
+        if ((err as { status?: number })?.status === 404) setAccountRoutesMissing(true);
       });
     return () => {
       cancelled = true;
     };
   }, [connectionStatus, authMode, apiBase]);
+
+  const hideAccountNav = accountRoutesMissing || !sessionRoutesSupported;
 
   const showAccountSetupBanner =
     authMode === 'key' && accountConfigured === false && !accountBannerDismissed;
@@ -716,12 +724,16 @@ export function MainLayout() {
               },
             ]
           : []),
-        {
-          path: '/account',
-          labelKey: 'nav.account',
-          metaKey: 'nav_meta.account',
-          icon: sidebarIcons.account,
-        },
+        ...(hideAccountNav
+          ? []
+          : [
+              {
+                path: '/account',
+                labelKey: 'nav.account',
+                metaKey: 'nav_meta.account',
+                icon: sidebarIcons.account,
+              },
+            ]),
         {
           path: '/system',
           labelKey: 'nav.system_info',

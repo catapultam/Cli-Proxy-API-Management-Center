@@ -89,6 +89,10 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
   if (status === 409) {
     return withHttpStatus(t('login.error_no_account'));
   }
+  if (status === 429) {
+    // 429 without a retry_after (e.g. passkey begin, or concurrent password verification).
+    return t('login.error_rate_limited');
+  }
   if (status && status >= 500) {
     return withHttpStatus(t('login.error_server'));
   }
@@ -127,6 +131,7 @@ export function LoginPage() {
   const restoreSession = useAuthStore((state) => state.restoreSession);
   const refreshSessionStatus = useAuthStore((state) => state.refreshSessionStatus);
   const sessionStatus = useAuthStore((state) => state.sessionStatus);
+  const sessionStatusError = useAuthStore((state) => state.sessionStatusError);
 
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
@@ -142,6 +147,7 @@ export function LoginPage() {
   const [autoLoginSuccess, setAutoLoginSuccess] = useState(false);
   const [error, setError] = useState('');
   const [retryAfter, setRetryAfter] = useState(0);
+  const [probeRetrying, setProbeRetrying] = useState(false);
   const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
@@ -225,7 +231,19 @@ export function LoginPage() {
     void refreshSessionStatus(baseToUse);
   }, [baseToUse, refreshSessionStatus]);
 
-  const showAccountForm = Boolean(sessionStatus?.account) && !useKeyForm;
+  const handleRetryProbe = useCallback(async () => {
+    setProbeRetrying(true);
+    try {
+      await refreshSessionStatus(baseToUse);
+    } finally {
+      setProbeRetrying(false);
+    }
+  }, [baseToUse, refreshSessionStatus]);
+
+  // A probe failure (network/5xx/timeout) is distinct from "no account": show a retry rather than
+  // silently falling back to the key form, unless the visitor has already chosen the key form.
+  const showProbeError = sessionStatusError && !useKeyForm;
+  const showAccountForm = Boolean(sessionStatus?.account) && !useKeyForm && !showProbeError;
   const showPasskeyButton =
     showAccountForm &&
     Boolean(sessionStatus?.passkeys_available) &&
@@ -285,7 +303,7 @@ export function LoginPage() {
         ceremony_id: begin.ceremony_id,
         credential: credentialJSON,
       });
-      applySessionLogin(baseToUse, response, 'passkey');
+      await applySessionLogin(baseToUse, response, 'passkey');
       showNotification(t('common.connected_status'), 'success');
       navigate('/', { replace: true });
     } catch (err: unknown) {
@@ -402,7 +420,26 @@ export function LoginPage() {
                 <div className={styles.subtitle}>{t('login.subtitle')}</div>
               </div>
 
-              {showAccountForm ? (
+              {showProbeError ? (
+                <>
+                  <div className={styles.errorBox}>{t('login.error_server_unreachable')}</div>
+                  <Button fullWidth onClick={handleRetryProbe} loading={probeRetrying}>
+                    {t('login.retry_button')}
+                  </Button>
+                  <div className={styles.toggleAdvanced}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setUseKeyForm(true);
+                        setError('');
+                      }}
+                    >
+                      {t('login.use_key_instead')}
+                    </button>
+                  </div>
+                </>
+              ) : showAccountForm ? (
                 <>
                   <Input
                     autoFocus

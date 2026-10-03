@@ -101,7 +101,10 @@
     "passkey_button": "使用通行金鑰登入",
     "use_key_instead": "改用管理金鑰登入",
     "use_account_instead": "改用使用者名稱和密碼登入",
-    "retry_after_message": "嘗試次數過多，請在 {{seconds}} 秒後重試"
+    "retry_after_message": "嘗試次數過多，請在 {{seconds}} 秒後重試",
+    "error_server_unreachable": "無法連線到伺服器。請檢查位址與網路後重試。",
+    "retry_button": "重試",
+    "error_rate_limited": "嘗試次數過多，請稍後再試。"
   },
   "header": {
     "refresh_all": "全部重新整理",
@@ -1867,7 +1870,12 @@
     "sign_out_all_failed": "登出所有裝置失敗",
     "signed_out_all": "已登出所有裝置",
     "setup_banner_message": "設定使用者名稱和密碼後，就不再需要管理金鑰了",
-    "setup_banner_cta": "設定帳戶"
+    "setup_banner_cta": "設定帳戶",
+    "error_rate_limited": "嘗試次數過多，請稍後再試。",
+    "passkey_ceremony_expired": "通行金鑰請求已過期或已被使用，請重試。",
+    "retry_button": "重試",
+    "rp_id_change_warning": "變更 Relying Party ID 會使現有通行金鑰失效，需要重新新增。",
+    "current_password_required_hint": "使用工作階段登入時，需要輸入目前密碼以確認此變更。"
   },
   "notification": {
     "trusted_proxies_restart_required": "可信任代理設定已儲存，重新啟動後端後生效。",

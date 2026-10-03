@@ -17,11 +17,24 @@ import {
 import { computeApiUrl } from '@/utils/connection';
 import { toApiError } from './apiError';
 
+/** Per-request bookkeeping stamped by the request interceptor, read back by the response/error one. */
+interface RequestStampConfig extends AxiosRequestConfig {
+  __identityVersion?: number;
+  __authTokenAtRequest?: string;
+  __apiBaseAtRequest?: string;
+}
+
 class ApiClient {
   private instance: AxiosInstance;
   private apiBase: string = '';
   private managementKey: string = '';
   private connectionRevision = 0;
+  /** Mirrors the auth store's `identityVersion`, pushed in by `setIdentityVersion`. Never imported
+   * from the store directly here to avoid a circular dependency (the store imports this client). */
+  private identityVersion = 0;
+  /** >0 while an account mutation that can legitimately 401 mid-flight should not trigger a global
+   * logout (the caller handles that response itself). See `suspendUnauthorizedHandling()`. */
+  private unauthorizedSuspendDepth = 0;
 
   constructor() {
     this.instance = axios.create({
@@ -68,6 +81,28 @@ class ApiClient {
    */
   setToken(managementKey: string): void {
     this.managementKey = managementKey;
+  }
+
+  /** Called by the auth store whenever its `identityVersion` changes (a real login/restore/logout). */
+  setIdentityVersion(identityVersion: number): void {
+    this.identityVersion = identityVersion;
+  }
+
+  /**
+   * Suppresses the global `unauthorized` dispatch for the duration of an account mutation
+   * (PUT /account, sign-out-all, passkey settings) that legitimately invalidates the caller's own
+   * session as a side effect: the component handles that outcome explicitly and a transient 401
+   * collision during the window must not also force a surprise global logout. Returns a release
+   * function; always call it (e.g. in a `finally`), and it is safe to call more than once.
+   */
+  suspendUnauthorizedHandling(): () => void {
+    this.unauthorizedSuspendDepth += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.unauthorizedSuspendDepth = Math.max(0, this.unauthorizedSuspendDepth - 1);
+    };
   }
 
   private readHeader(headers: Record<string, unknown> | undefined, keys: string[]): string | null {
@@ -136,6 +171,13 @@ class ApiClient {
           config.headers.Authorization = `Bearer ${this.managementKey}`;
         }
 
+        // Stamped so the response/error handlers can tell a stale request (made under a since-
+        // replaced identity or token) from a current one.
+        const stamped = config as RequestStampConfig;
+        stamped.__identityVersion = this.identityVersion;
+        stamped.__authTokenAtRequest = this.managementKey;
+        stamped.__apiBaseAtRequest = this.apiBase;
+
         return config;
       },
       (error) => Promise.reject(this.handleError(error))
@@ -154,9 +196,18 @@ class ApiClient {
 
         // Sliding session renewal for bearer-session mode: the backend reissues the token
         // once less than half its lifetime remains. Cookie mode renews via Set-Cookie instead.
+        // The request's own stamped token/apiBase ride along so the handler can ignore a late
+        // refresh that no longer matches the current identity (see `handleSessionRefreshToken`).
         if (sessionRefreshToken) {
+          const requestConfig = response.config as RequestStampConfig;
           window.dispatchEvent(
-            new CustomEvent('session-refresh', { detail: { token: sessionRefreshToken } })
+            new CustomEvent('session-refresh', {
+              detail: {
+                token: sessionRefreshToken,
+                previousToken: requestConfig.__authTokenAtRequest,
+                apiBase: requestConfig.__apiBaseAtRequest,
+              },
+            })
           );
         }
 
@@ -188,9 +239,15 @@ class ApiClient {
   private handleError(error: unknown): ApiError {
     const apiError = toApiError(error);
 
-    // 401 未授权 - 触发登出事件
-    if (apiError.status === 401) {
-      window.dispatchEvent(new Event('unauthorized'));
+    // 401 未授权 - 触发登出事件 (but never for a stale request, and never while suspended)
+    if (apiError.status === 401 && this.unauthorizedSuspendDepth === 0) {
+      const requestConfig = (error as { config?: RequestStampConfig })?.config;
+      const requestIdentityVersion = requestConfig?.__identityVersion;
+      const isCurrentIdentity =
+        requestIdentityVersion === undefined || requestIdentityVersion === this.identityVersion;
+      if (isCurrentIdentity) {
+        window.dispatchEvent(new Event('unauthorized'));
+      }
     }
 
     return apiError;

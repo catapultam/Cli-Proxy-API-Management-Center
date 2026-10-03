@@ -22,11 +22,7 @@ import { LegacyBackendError, probeLegacyBackend } from '@/services/api/legacyBac
 import { useConfigStore } from './useConfigStore';
 import { useModelsStore } from './useModelsStore';
 import { useQuotaStore } from './useQuotaStore';
-import {
-  detectApiBaseFromLocation,
-  isSameOriginAsPage,
-  normalizeApiBase,
-} from '@/utils/connection';
+import { detectApiBaseFromLocation, isCookieEligible, normalizeApiBase } from '@/utils/connection';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
@@ -36,6 +32,14 @@ interface AuthStoreState extends AuthState {
    * show. `null` means the endpoint is unavailable (old backend) or has not been checked yet.
    */
   sessionStatus: SessionStatus | null;
+  /** True when the last `session/status` probe failed to reach the backend at all (network/5xx/
+   * timeout) rather than giving a definitive answer. Distinguishes "no account" from "couldn't
+   * tell" so the login page can offer a retry instead of silently falling back to the key form. */
+  sessionStatusError: boolean;
+  /** `false` only once a `session/status` probe has definitively 404'd (an old backend with no
+   * session routes at all). Starts `true` (optimistic) so the Account nav entry doesn't flash
+   * away before the first probe completes. */
+  sessionRoutesSupported: boolean;
   /**
    * Bumped only when the *identity* behind the connection actually changes (a new login, a
    * restored session, or a logout) — never by a sliding-session token refresh. Callers that need
@@ -56,7 +60,14 @@ interface AuthStoreState extends AuthState {
     apiBase: string,
     response: SessionResponse,
     method: SessionLoginMethod
-  ) => void;
+  ) => Promise<void>;
+  /**
+   * Adopts a fresh token for the SAME already-logged-in identity (e.g. a password change rotates
+   * `session-secret`, which issues a new token so the caller stays logged in). Unlike
+   * `applySessionLogin`, this never clears the config/models/quota caches and never bumps
+   * `identityVersion`: nothing about who is logged in changed, only the token value.
+   */
+  adoptRotatedToken: (apiBase: string, response: SessionResponse) => void;
   refreshSessionStatus: (apiBaseOverride?: string) => Promise<SessionStatus | null>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<boolean>;
@@ -66,6 +77,36 @@ interface AuthStoreState extends AuthState {
 }
 
 let restoreSessionPromise: Promise<boolean> | null = null;
+
+/** Dedupes the best-effort "clear any stale session cookie" POST across concurrent callers. */
+let pendingSessionLogoutRequest: Promise<void> | null = null;
+
+/**
+ * Fires `POST session/logout` best-effort: never throws, and the caller never awaits it (clearing
+ * local state must not wait on a network round trip). Deduped so concurrent callers (e.g. a 401
+ * on several parallel requests) only produce one request in flight.
+ */
+function fireSessionLogoutBestEffort(apiBase: string): void {
+  if (!apiBase || pendingSessionLogoutRequest) return;
+  pendingSessionLogoutRequest = sessionApi
+    .logout(apiBase)
+    .catch(() => {
+      // Best-effort: nothing to recover from here.
+    })
+    .finally(() => {
+      pendingSessionLogoutRequest = null;
+    });
+}
+
+/**
+ * B1: a stale `cpa_mgmt_session` cookie must never block a subsequent key login or linger after a
+ * session is confirmed gone. Only meaningful when a cookie could exist at all (same-origin, root
+ * path) — on a bearer-only apiBase there is nothing to clear.
+ */
+function clearStaleCookieBestEffort(apiBase: string): void {
+  if (!isCookieEligible(apiBase)) return;
+  fireSessionLogoutBestEffort(apiBase);
+}
 
 type SessionStatusProbe =
   | { kind: 'ok'; status: SessionStatus }
@@ -103,321 +144,379 @@ async function fetchSessionStatusSafely(
 
 export const useAuthStore = create<AuthStoreState>()(
   persist(
-    (set, get) => ({
-      // 初始状态
-      isAuthenticated: false,
-      apiBase: '',
-      managementKey: '',
-      rememberPassword: false,
-      serverVersion: null,
-      serverBuildDate: null,
-      supportsPlugin: false,
-      connectionStatus: 'disconnected',
-      authMode: 'key',
-      sessionTransport: 'bearer',
-      loginMethod: '',
-      sessionStatus: null,
-      identityVersion: 0,
+    (set, get) => {
+      /** Bumps identityVersion and mirrors it into `apiClient` (which cannot import this store). */
+      const bumpIdentityVersion = (): number => {
+        const next = get().identityVersion + 1;
+        apiClient.setIdentityVersion(next);
+        return next;
+      };
 
-      // 恢复会话并自动登录
-      restoreSession: () => {
-        if (restoreSessionPromise) return restoreSessionPromise;
+      return {
+        // 初始状态
+        isAuthenticated: false,
+        apiBase: '',
+        managementKey: '',
+        rememberPassword: false,
+        serverVersion: null,
+        serverBuildDate: null,
+        supportsPlugin: false,
+        connectionStatus: 'disconnected',
+        authMode: 'key',
+        sessionTransport: 'bearer',
+        loginMethod: '',
+        sessionStatus: null,
+        sessionStatusError: false,
+        sessionRoutesSupported: true,
+        identityVersion: 0,
 
-        restoreSessionPromise = (async () => {
-          obfuscatedStorage.migratePlaintextKeys(['apiBase', 'apiUrl', 'managementKey']);
+        // 恢复会话并自动登录
+        restoreSession: () => {
+          if (restoreSessionPromise) return restoreSessionPromise;
 
-          const wasLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-          const legacyBase =
-            obfuscatedStorage.getItem<string>('apiBase') ||
-            obfuscatedStorage.getItem<string>('apiUrl', { encrypt: true });
-          const legacyKey = obfuscatedStorage.getItem<string>('managementKey');
+          restoreSessionPromise = (async () => {
+            obfuscatedStorage.migratePlaintextKeys(['apiBase', 'apiUrl', 'managementKey']);
 
-          const { apiBase, managementKey, rememberPassword, authMode, sessionTransport } = get();
-          const resolvedBase = normalizeApiBase(
-            apiBase || legacyBase || detectApiBaseFromLocation()
-          );
+            const wasLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            const legacyBase =
+              obfuscatedStorage.getItem<string>('apiBase') ||
+              obfuscatedStorage.getItem<string>('apiUrl', { encrypt: true });
+            const legacyKey = obfuscatedStorage.getItem<string>('managementKey');
 
-          // Check the new session-based login first: an authenticated cookie or a remembered
-          // bearer-session token means we can log straight in with no prompt at all.
-          const previousAuthMode = authMode;
-          const bearerToken =
-            previousAuthMode === 'session' && sessionTransport === 'bearer'
-              ? managementKey
-              : undefined;
-          const probe = await probeSessionStatus(resolvedBase, bearerToken);
-          set({ apiBase: resolvedBase });
+            const { apiBase, managementKey, rememberPassword, authMode, sessionTransport } = get();
+            const resolvedBase = normalizeApiBase(
+              apiBase || legacyBase || detectApiBaseFromLocation()
+            );
 
-          if (probe.kind === 'error') {
-            // Inconclusive (network error, 5xx, timeout): never mutate the persisted identity on
-            // a guess, and never cache this failed attempt so the next call can retry for real.
+            // Check the new session-based login first: an authenticated cookie or a remembered
+            // bearer-session token means we can log straight in with no prompt at all.
+            const previousAuthMode = authMode;
+            const bearerToken =
+              previousAuthMode === 'session' && sessionTransport === 'bearer'
+                ? managementKey
+                : undefined;
+            const probe = await probeSessionStatus(resolvedBase, bearerToken);
+            set({ apiBase: resolvedBase });
+
+            if (probe.kind === 'error') {
+              // Inconclusive (network error, 5xx, timeout): never mutate the persisted identity
+              // on a guess. Surface it so the login page can offer a retry instead of silently
+              // showing the key-only form.
+              set({ sessionStatusError: true });
+              if (previousAuthMode === 'session') {
+                // Nothing else pending for this attempt: safe to let the next call retry fresh.
+                restoreSessionPromise = null;
+                return false;
+              }
+              // Key-mode (the default/common case) falls through to the unchanged legacy flow
+              // below, matching today's resilience: a transient probe failure must not block a
+              // login that would otherwise succeed with an already-known-good management key.
+              // Do NOT clear `restoreSessionPromise` here — the legacy flow below may still be
+              // in flight (awaiting `login()`), and clearing it now would let a concurrent caller
+              // kick off a second, parallel restore attempt.
+            } else {
+              set({
+                sessionStatusError: false,
+                sessionStatus: probe.kind === 'ok' ? probe.status : null,
+                sessionRoutesSupported: probe.kind !== 'not-found',
+              });
+
+              if (probe.kind === 'ok' && probe.status.authenticated) {
+                const transport: SessionTransport = isCookieEligible(resolvedBase)
+                  ? 'cookie'
+                  : 'bearer';
+                const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
+                apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
+                set({
+                  isAuthenticated: true,
+                  apiBase: resolvedBase,
+                  managementKey: tokenForClient,
+                  authMode: 'session',
+                  sessionTransport: transport,
+                  loginMethod: probe.status.method,
+                  connectionStatus: 'connected',
+                  identityVersion: bumpIdentityVersion(),
+                });
+                return true;
+              }
+
+              if (previousAuthMode === 'session') {
+                // A definitive answer (200 authenticated:false, or 404 meaning the backend no
+                // longer exposes session routes at all): the remembered session is confirmed
+                // gone. `managementKey` here is a session token, not a real management key, so it
+                // must never be retried against the legacy key flow below. Also clear the (same-
+                // origin) cookie best-effort: the backend only clears it itself on a 401 from an
+                // authenticated request, which this status check never made.
+                clearStaleCookieBestEffort(resolvedBase);
+                apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
+                set({
+                  isAuthenticated: false,
+                  managementKey: '',
+                  authMode: 'key',
+                  sessionTransport: 'bearer',
+                  loginMethod: '',
+                  connectionStatus: 'disconnected',
+                  identityVersion: bumpIdentityVersion(),
+                });
+                return false;
+              }
+            }
+
+            // Legacy remembered-key auto-login (unchanged behavior).
+            const resolvedKey = managementKey || legacyKey || '';
+            const resolvedRememberPassword =
+              rememberPassword || Boolean(managementKey) || Boolean(legacyKey);
+
+            set({
+              apiBase: resolvedBase,
+              managementKey: resolvedKey,
+              rememberPassword: resolvedRememberPassword,
+            });
+            apiClient.setConfig({ apiBase: resolvedBase, managementKey: resolvedKey });
+
+            if (wasLoggedIn && resolvedBase && resolvedKey) {
+              try {
+                await get().login({
+                  apiBase: resolvedBase,
+                  managementKey: resolvedKey,
+                  rememberPassword: resolvedRememberPassword,
+                });
+                return true;
+              } catch (error) {
+                console.warn('Auto login failed:', error);
+                return false;
+              } finally {
+                restoreSessionPromise = null;
+              }
+            }
+
             restoreSessionPromise = null;
-            if (previousAuthMode === 'session') {
-              return false;
-            }
-            // Key-mode (the default/common case) falls through to the unchanged legacy flow
-            // below, matching today's resilience: a transient probe failure must not block a
-            // login that would otherwise succeed with an already-known-good management key.
-          } else {
-            set({ sessionStatus: probe.kind === 'ok' ? probe.status : null });
+            return false;
+          })();
 
-            if (probe.kind === 'ok' && probe.status.authenticated) {
-              const transport: SessionTransport = isSameOriginAsPage(resolvedBase)
-                ? 'cookie'
-                : 'bearer';
-              const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
-              apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
-              set({
-                isAuthenticated: true,
-                apiBase: resolvedBase,
-                managementKey: tokenForClient,
-                authMode: 'session',
-                sessionTransport: transport,
-                loginMethod: probe.status.method,
-                connectionStatus: 'connected',
-                identityVersion: get().identityVersion + 1,
-              });
-              return true;
-            }
+          return restoreSessionPromise;
+        },
 
-            if (previousAuthMode === 'session') {
-              // A definitive answer (200 authenticated:false, or 404 meaning the backend no
-              // longer exposes session routes at all): the remembered session is confirmed gone.
-              // `managementKey` here is a session token, not a real management key, so it must
-              // never be retried against the legacy key flow below.
-              apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
-              set({
-                isAuthenticated: false,
-                managementKey: '',
-                authMode: 'key',
-                sessionTransport: 'bearer',
-                loginMethod: '',
-                connectionStatus: 'disconnected',
-                identityVersion: get().identityVersion + 1,
-              });
-              return false;
-            }
+        // 刷新当前 apiBase 的 session/status（供登录页在用户修改 Advanced 连接地址后重新探测，或手动重试）
+        refreshSessionStatus: async (apiBaseOverride) => {
+          const base = normalizeApiBase(apiBaseOverride ?? get().apiBase);
+          const probe = await probeSessionStatus(base);
+          if (probe.kind === 'error') {
+            set({ sessionStatusError: true });
+            return null;
           }
-
-          // Legacy remembered-key auto-login (unchanged behavior).
-          const resolvedKey = managementKey || legacyKey || '';
-          const resolvedRememberPassword =
-            rememberPassword || Boolean(managementKey) || Boolean(legacyKey);
-
           set({
-            apiBase: resolvedBase,
-            managementKey: resolvedKey,
-            rememberPassword: resolvedRememberPassword,
+            sessionStatusError: false,
+            sessionStatus: probe.kind === 'ok' ? probe.status : null,
+            sessionRoutesSupported: probe.kind !== 'not-found',
           });
-          apiClient.setConfig({ apiBase: resolvedBase, managementKey: resolvedKey });
+          return probe.kind === 'ok' ? probe.status : null;
+        },
 
-          if (wasLoggedIn && resolvedBase && resolvedKey) {
+        // 登录（管理密钥模式，今天的行为保持不变）
+        login: async (credentials) => {
+          const apiBase = normalizeApiBase(credentials.apiBase);
+          const managementKey = credentials.managementKey.trim();
+          const rememberPassword = credentials.rememberPassword ?? get().rememberPassword ?? false;
+
+          // A stale session cookie must never block a key login: clear it best-effort first (it
+          // is harmless/no-op if there is nothing to clear, e.g. on a non-cookie-eligible apiBase).
+          clearStaleCookieBestEffort(apiBase);
+
+          try {
+            set({
+              connectionStatus: 'connecting',
+              serverVersion: null,
+              serverBuildDate: null,
+              supportsPlugin: false,
+            });
+            useConfigStore.getState().clearCache();
+            useModelsStore.getState().clearCache();
+            useQuotaStore.getState().clearQuotaCache();
+
+            // 配置 API 客户端
+            apiClient.setConfig({
+              apiBase,
+              managementKey,
+            });
+
+            // 测试连接 - 获取配置。只在 v8 路由不存在时诊断旧版后端。
+            const revision = apiClient.getConnectionRevision();
             try {
-              await get().login({
-                apiBase: resolvedBase,
-                managementKey: resolvedKey,
-                rememberPassword: resolvedRememberPassword,
-              });
-              return true;
+              await useConfigStore.getState().fetchConfig(true);
             } catch (error) {
-              console.warn('Auto login failed:', error);
-              return false;
+              if (
+                (error as { status?: number })?.status === 404 &&
+                revision === apiClient.getConnectionRevision() &&
+                (await probeLegacyBackend(apiBase, managementKey)) &&
+                revision === apiClient.getConnectionRevision()
+              ) {
+                throw new LegacyBackendError();
+              }
+              throw error;
+            }
+
+            // 登录成功
+            set({
+              isAuthenticated: true,
+              apiBase,
+              managementKey,
+              rememberPassword,
+              authMode: 'key',
+              sessionTransport: 'bearer',
+              loginMethod: 'key',
+              connectionStatus: 'connected',
+              identityVersion: bumpIdentityVersion(),
+            });
+            if (rememberPassword) {
+              localStorage.setItem('isLoggedIn', 'true');
+            } else {
+              localStorage.removeItem('isLoggedIn');
+            }
+          } catch (error: unknown) {
+            set({ connectionStatus: 'error' });
+            throw error;
+          }
+        },
+
+        // 用户名 + 密码登录（会话模式）
+        loginWithPassword: async ({ apiBase, username, password }) => {
+          const normalizedBase = normalizeApiBase(apiBase);
+          set({ connectionStatus: 'connecting' });
+          try {
+            const response = await sessionApi.login(normalizedBase, { username, password });
+            await get().applySessionLogin(normalizedBase, response, 'password');
+          } catch (error) {
+            set({ connectionStatus: 'error' });
+            throw error;
+          }
+        },
+
+        // 由密码或 passkey 登录成功后，统一落地会话状态（选择 cookie / bearer 传输方式）
+        applySessionLogin: async (apiBase, response, method) => {
+          const normalizedBase = normalizeApiBase(apiBase);
+          let transport: SessionTransport = isCookieEligible(normalizedBase) ? 'cookie' : 'bearer';
+
+          if (transport === 'cookie') {
+            // Some browsers/privacy modes block first-party cookies even when same-origin.
+            // Verify the cookie actually stuck before committing to cookie mode; fall back to the
+            // bearer token we already have in hand if it didn't.
+            const verify = await fetchSessionStatusSafely(normalizedBase);
+            if (!verify?.authenticated) {
+              transport = 'bearer';
             }
           }
 
-          return false;
-        })();
+          const tokenForClient = transport === 'bearer' ? response.token : '';
 
-        return restoreSessionPromise;
-      },
-
-      // 刷新当前 apiBase 的 session/status（供登录页在用户修改 Advanced 连接地址后重新探测）
-      refreshSessionStatus: async (apiBaseOverride) => {
-        const base = normalizeApiBase(apiBaseOverride ?? get().apiBase);
-        const status = await fetchSessionStatusSafely(base);
-        set({ sessionStatus: status });
-        return status;
-      },
-
-      // 登录（管理密钥模式，今天的行为保持不变）
-      login: async (credentials) => {
-        const apiBase = normalizeApiBase(credentials.apiBase);
-        const managementKey = credentials.managementKey.trim();
-        const rememberPassword = credentials.rememberPassword ?? get().rememberPassword ?? false;
-
-        try {
-          set({
-            connectionStatus: 'connecting',
-            serverVersion: null,
-            serverBuildDate: null,
-            supportsPlugin: false,
-          });
           useConfigStore.getState().clearCache();
           useModelsStore.getState().clearCache();
           useQuotaStore.getState().clearQuotaCache();
 
-          // 配置 API 客户端
-          apiClient.setConfig({
-            apiBase,
-            managementKey,
-          });
-
-          // 测试连接 - 获取配置。只在 v8 路由不存在时诊断旧版后端。
-          const revision = apiClient.getConnectionRevision();
-          try {
-            await useConfigStore.getState().fetchConfig(true);
-          } catch (error) {
-            if (
-              (error as { status?: number })?.status === 404 &&
-              revision === apiClient.getConnectionRevision() &&
-              (await probeLegacyBackend(apiBase, managementKey)) &&
-              revision === apiClient.getConnectionRevision()
-            ) {
-              throw new LegacyBackendError();
-            }
-            throw error;
-          }
-
-          // 登录成功
+          apiClient.setConfig({ apiBase: normalizedBase, managementKey: tokenForClient });
           set({
             isAuthenticated: true,
-            apiBase,
-            managementKey,
-            rememberPassword,
-            authMode: 'key',
-            sessionTransport: 'bearer',
-            loginMethod: 'key',
+            apiBase: normalizedBase,
+            managementKey: tokenForClient,
+            authMode: 'session',
+            sessionTransport: transport,
+            loginMethod: method,
             connectionStatus: 'connected',
-            identityVersion: get().identityVersion + 1,
+            identityVersion: bumpIdentityVersion(),
           });
-          if (rememberPassword) {
-            localStorage.setItem('isLoggedIn', 'true');
-          } else {
-            localStorage.removeItem('isLoggedIn');
-          }
-        } catch (error: unknown) {
-          set({ connectionStatus: 'error' });
-          throw error;
-        }
-      },
+          localStorage.setItem('isLoggedIn', 'true');
+        },
 
-      // 用户名 + 密码登录（会话模式）
-      loginWithPassword: async ({ apiBase, username, password }) => {
-        const normalizedBase = normalizeApiBase(apiBase);
-        set({ connectionStatus: 'connecting' });
-        try {
-          const response = await sessionApi.login(normalizedBase, { username, password });
-          get().applySessionLogin(normalizedBase, response, 'password');
-        } catch (error) {
-          set({ connectionStatus: 'error' });
-          throw error;
-        }
-      },
+        adoptRotatedToken: (apiBase, response) => {
+          const { sessionTransport, apiBase: currentApiBase } = get();
+          // Cookie mode: the browser already applied the rotated token via Set-Cookie on the
+          // response that carried it. Nothing for the client to do.
+          if (sessionTransport !== 'bearer') return;
+          const normalizedBase = normalizeApiBase(apiBase) || currentApiBase;
+          if (normalizedBase !== currentApiBase) return; // defensive: never adopt across a switch.
+          apiClient.setToken(response.token);
+          set({ managementKey: response.token });
+        },
 
-      // 由密码或 passkey 登录成功后，统一落地会话状态（选择 cookie / bearer 传输方式）
-      applySessionLogin: (apiBase, response, method) => {
-        const normalizedBase = normalizeApiBase(apiBase);
-        const transport: SessionTransport = isSameOriginAsPage(normalizedBase)
-          ? 'cookie'
-          : 'bearer';
-        const tokenForClient = transport === 'bearer' ? response.token : '';
+        // 登出
+        logout: async () => {
+          restoreSessionPromise = null;
+          const { authMode, apiBase } = get();
 
-        useConfigStore.getState().clearCache();
-        useModelsStore.getState().clearCache();
-        useQuotaStore.getState().clearQuotaCache();
-
-        apiClient.setConfig({ apiBase: normalizedBase, managementKey: tokenForClient });
-        set({
-          isAuthenticated: true,
-          apiBase: normalizedBase,
-          managementKey: tokenForClient,
-          rememberPassword: true,
-          authMode: 'session',
-          sessionTransport: transport,
-          loginMethod: method,
-          connectionStatus: 'connected',
-          identityVersion: get().identityVersion + 1,
-        });
-        localStorage.setItem('isLoggedIn', 'true');
-      },
-
-      // 登出
-      logout: async () => {
-        restoreSessionPromise = null;
-        const { authMode, apiBase } = get();
-
-        if (authMode === 'session' && apiBase) {
-          try {
-            await sessionApi.logout(apiBase);
-          } catch {
-            // Ignore logout errors (e.g. already expired); local state is always cleared below.
-          }
-        }
-
-        apiClient.setConfig({ apiBase: '', managementKey: '' });
-        useConfigStore.getState().clearCache();
-        useModelsStore.getState().clearCache();
-        useQuotaStore.getState().clearQuotaCache();
-        set({
-          isAuthenticated: false,
-          apiBase: '',
-          managementKey: '',
-          serverVersion: null,
-          serverBuildDate: null,
-          supportsPlugin: false,
-          connectionStatus: 'disconnected',
-          authMode: 'key',
-          sessionTransport: 'bearer',
-          loginMethod: '',
-          sessionStatus: null,
-          identityVersion: get().identityVersion + 1,
-        });
-        localStorage.removeItem('isLoggedIn');
-      },
-
-      // 检查认证状态
-      checkAuth: async () => {
-        const { managementKey, apiBase } = get();
-
-        if (!managementKey || !apiBase) {
-          return false;
-        }
-
-        try {
-          // 重新配置客户端
-          apiClient.setConfig({ apiBase, managementKey });
-          set({ supportsPlugin: false });
-
-          // 验证连接
-          await useConfigStore.getState().fetchConfig();
-
-          set({
-            isAuthenticated: true,
-            connectionStatus: 'connected',
-          });
-
-          return true;
-        } catch {
+          // Clear local state FIRST — the caller should see "logged out" immediately rather than
+          // waiting on a network round trip. The (best-effort, deduped) server-side logout fires
+          // afterward and is never awaited.
+          apiClient.setConfig({ apiBase: '', managementKey: '' });
+          useConfigStore.getState().clearCache();
+          useModelsStore.getState().clearCache();
+          useQuotaStore.getState().clearQuotaCache();
           set({
             isAuthenticated: false,
-            connectionStatus: 'error',
+            apiBase: '',
+            managementKey: '',
+            rememberPassword: false,
+            serverVersion: null,
+            serverBuildDate: null,
             supportsPlugin: false,
+            connectionStatus: 'disconnected',
+            authMode: 'key',
+            sessionTransport: 'bearer',
+            loginMethod: '',
+            sessionStatus: null,
+            identityVersion: bumpIdentityVersion(),
           });
-          return false;
-        }
-      },
+          localStorage.removeItem('isLoggedIn');
 
-      // 更新服务器版本
-      updateServerVersion: (version, buildDate) => {
-        set({
-          serverVersion: version || null,
-          serverBuildDate: buildDate || null,
-        });
-      },
+          if (authMode === 'session' && apiBase) {
+            fireSessionLogoutBestEffort(apiBase);
+          }
+        },
 
-      updateServerPluginSupport: (supportsPlugin) => {
-        set({ supportsPlugin });
-      },
-    }),
+        // 检查认证状态
+        checkAuth: async () => {
+          const { managementKey, apiBase } = get();
+
+          if (!managementKey || !apiBase) {
+            return false;
+          }
+
+          try {
+            // 重新配置客户端
+            apiClient.setConfig({ apiBase, managementKey });
+            set({ supportsPlugin: false });
+
+            // 验证连接
+            await useConfigStore.getState().fetchConfig();
+
+            set({
+              isAuthenticated: true,
+              connectionStatus: 'connected',
+            });
+
+            return true;
+          } catch {
+            set({
+              isAuthenticated: false,
+              connectionStatus: 'error',
+              supportsPlugin: false,
+            });
+            return false;
+          }
+        },
+
+        // 更新服务器版本
+        updateServerVersion: (version, buildDate) => {
+          set({
+            serverVersion: version || null,
+            serverBuildDate: buildDate || null,
+          });
+        },
+
+        updateServerPluginSupport: (supportsPlugin) => {
+          set({ supportsPlugin });
+        },
+      };
+    },
     {
       name: STORAGE_KEY_AUTH,
       storage: createJSONStorage(() => ({
@@ -434,7 +533,13 @@ export const useAuthStore = create<AuthStoreState>()(
       })),
       partialize: (state) => ({
         apiBase: state.apiBase,
-        ...(state.rememberPassword ? { managementKey: state.managementKey } : {}),
+        // Session mode persists its (revocable, 30-day) token regardless of `rememberPassword`,
+        // which only gates the real management key. Without this split, forcing session logins to
+        // flip `rememberPassword` just to survive a reload would also silently "remember" a key
+        // the user never asked to remember.
+        ...(state.authMode === 'session' || state.rememberPassword
+          ? { managementKey: state.managementKey }
+          : {}),
         rememberPassword: state.rememberPassword,
         serverVersion: state.serverVersion,
         serverBuildDate: state.serverBuildDate,
@@ -445,26 +550,47 @@ export const useAuthStore = create<AuthStoreState>()(
   )
 );
 
+export interface SessionRefreshDetail {
+  token: string;
+  /** The bearer token the triggering request was authenticated with, if any. */
+  previousToken?: string;
+  /** The apiBase the triggering request was made against. */
+  apiBase?: string;
+}
+
 /**
  * Sliding bearer-session renewal: `apiClient` dispatches a `session-refresh` window event when a
  * response carries `X-CPA-Session-Refresh`. Cookie-mode sessions renew via `Set-Cookie` instead
  * and never emit it. Exported (rather than inlined in the listener below) so it has a single,
  * directly testable entry point independent of whether `window` exists at module-load time.
+ *
+ * Ignores a refresh whose triggering request no longer matches the CURRENT identity: a late
+ * response from a request made under an old token (already superseded by a newer refresh or a
+ * fresh login) or a since-abandoned apiBase must not clobber the current session's token.
  */
-export function handleSessionRefreshToken(token: string | null | undefined): void {
-  if (!token) return;
+export function handleSessionRefreshToken(detail: SessionRefreshDetail | null | undefined): void {
+  if (!detail?.token) return;
   const state = useAuthStore.getState();
   if (state.authMode !== 'session' || state.sessionTransport !== 'bearer') return;
-  // `setToken` (not `setConfig`) deliberately: this is the same identity renewing its token, not
-  // a new connection, so in-flight requests guarded by `getConnectionRevision()` must not abort.
-  apiClient.setToken(token);
-  useAuthStore.setState({ managementKey: token });
+  if (detail.apiBase !== undefined && detail.apiBase !== state.apiBase) return;
+  if (detail.previousToken !== undefined && detail.previousToken !== state.managementKey) return;
+  apiClient.setToken(detail.token);
+  useAuthStore.setState({ managementKey: detail.token });
 }
 
 // 监听全局未授权事件
 if (typeof window !== 'undefined') {
+  let handlingUnauthorized = false;
   window.addEventListener('unauthorized', () => {
-    useAuthStore.getState().logout();
+    if (handlingUnauthorized) return; // dedupe: several parallel 401s must only log out once.
+    handlingUnauthorized = true;
+    const { apiBase } = useAuthStore.getState();
+    // Regardless of the current auth mode: a stale cookie left over from a previous session
+    // login must not linger once we know the credential it carries is no good.
+    clearStaleCookieBestEffort(apiBase);
+    Promise.resolve(useAuthStore.getState().logout()).finally(() => {
+      handlingUnauthorized = false;
+    });
   });
 
   window.addEventListener('server-version-update', ((e: CustomEvent) => {
@@ -477,6 +603,6 @@ if (typeof window !== 'undefined') {
   }) as EventListener);
 
   window.addEventListener('session-refresh', ((e: CustomEvent) => {
-    handleSessionRefreshToken(e.detail?.token);
+    handleSessionRefreshToken(e.detail as SessionRefreshDetail | undefined);
   }) as EventListener);
 }

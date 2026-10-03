@@ -9,6 +9,7 @@
  */
 import axios from 'axios';
 import { computeApiUrl } from '@/utils/connection';
+import { REQUEST_TIMEOUT_MS } from '@/utils/constants';
 import { toApiError } from './apiError';
 import type { SessionResponse, SessionStatus } from '@/types';
 
@@ -32,6 +33,7 @@ async function sessionRequest<T>(
       method,
       url: `${computeApiUrl(apiBase)}${SESSION_PATH}${path}`,
       data: options.data,
+      timeout: REQUEST_TIMEOUT_MS,
       headers: options.bearerToken ? { Authorization: `Bearer ${options.bearerToken}` } : undefined,
     });
     return response.data;

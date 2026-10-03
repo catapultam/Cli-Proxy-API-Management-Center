@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IconEye, IconEyeOff, IconTrash2 } from '@/components/ui/icons';
 import { useAuthStore, useNotificationStore } from '@/stores';
+import { apiClient } from '@/services/api/client';
 import { accountApi } from '@/services/api/account';
 import {
   creationOptionsFromJSON,
@@ -15,10 +16,12 @@ import {
 } from '@/services/passkey';
 import { getErrorMessage } from '@/utils/helpers';
 import { formatDateTimeValue } from '@/utils/format';
-import type { AccountPasskey, AccountView } from '@/types';
+import type { AccountPasskey, AccountView, ApiError } from '@/types';
 import styles from './AccountPage.module.scss';
 
 const MIN_PASSWORD_LENGTH = 12;
+
+const isRateLimited = (err: unknown): boolean => (err as Partial<ApiError>)?.status === 429;
 
 export function AccountPage() {
   const { t, i18n } = useTranslation();
@@ -28,6 +31,7 @@ export function AccountPage() {
   const apiBase = useAuthStore((state) => state.apiBase);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const applySessionLogin = useAuthStore((state) => state.applySessionLogin);
+  const adoptRotatedToken = useAuthStore((state) => state.adoptRotatedToken);
   const logout = useAuthStore((state) => state.logout);
 
   const [account, setAccount] = useState<AccountView | null>(null);
@@ -43,8 +47,10 @@ export function AccountPage() {
 
   const [rpId, setRpId] = useState('');
   const [originsText, setOriginsText] = useState('');
+  const [passkeySettingsPassword, setPasskeySettingsPassword] = useState('');
   const [savingPasskeySettings, setSavingPasskeySettings] = useState(false);
 
+  const [addPasskeyPassword, setAddPasskeyPassword] = useState('');
   const [addingPasskey, setAddingPasskey] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -91,12 +97,17 @@ export function AccountPage() {
     [account?.configured, t]
   );
 
+  const rpIdChanged = Boolean(
+    account?.passkeys.length && rpId.trim() && rpId.trim() !== account.passkey_rp_id
+  );
+
   const handleSaveAccount = useCallback(async () => {
     const trimmedUsername = username.trim();
     if (!trimmedUsername) {
       showNotification(t('account.error_username_required'), 'error');
       return;
     }
+    const wasSessionBefore = authMode === 'session';
     const isFirstTimeSetup = !account?.configured;
     // On an existing account an empty password keeps the current one (username-only changes are
     // valid); the password is only required on first-time setup.
@@ -116,13 +127,25 @@ export function AccountPage() {
     }
 
     setSavingAccount(true);
+    // This mutation can legitimately invalidate the caller's own current session as a side effect
+    // (a password change rotates session-secret); a 401 racing with that must not also trigger a
+    // surprise global logout — this handler deals with the outcome explicitly below.
+    const releaseUnauthorizedSuspend = apiClient.suspendUnauthorizedHandling();
     try {
       const response = await accountApi.save({
         username: trimmedUsername,
         password,
         ...(requiresCurrentPassword ? { current_password: currentPassword } : {}),
       });
-      applySessionLogin(apiBase, response, 'password');
+      if (wasSessionBefore) {
+        // Same identity, just a rotated token (e.g. from a password change): never treat this as
+        // a fresh login, which would otherwise needlessly clear every cache and bump identityVersion.
+        adoptRotatedToken(apiBase, response);
+      } else {
+        // A genuine transition into session mode (first-time setup, or a key-mode admin resetting
+        // an existing account's password) — this IS a real new session.
+        await applySessionLogin(apiBase, response, 'password');
+      }
       setAccount((prev) =>
         prev ? { ...prev, configured: true, username: trimmedUsername } : prev
       );
@@ -130,18 +153,25 @@ export function AccountPage() {
       setCurrentPassword('');
       showNotification(t('account.account_saved'), 'success');
     } catch (err: unknown) {
-      const message = getErrorMessage(err);
-      showNotification(
-        `${t('account.account_save_failed')}${message ? `: ${message}` : ''}`,
-        'error'
-      );
+      if (isRateLimited(err)) {
+        showNotification(t('account.error_rate_limited'), 'error');
+      } else {
+        const message = getErrorMessage(err);
+        showNotification(
+          `${t('account.account_save_failed')}${message ? `: ${message}` : ''}`,
+          'error'
+        );
+      }
     } finally {
+      releaseUnauthorizedSuspend();
       setSavingAccount(false);
     }
   }, [
     account?.configured,
+    adoptRotatedToken,
     apiBase,
     applySessionLogin,
+    authMode,
     currentPassword,
     password,
     passwordHint,
@@ -152,36 +182,58 @@ export function AccountPage() {
   ]);
 
   const handleSavePasskeySettings = useCallback(async () => {
+    if (requiresCurrentPassword && !passkeySettingsPassword) {
+      showNotification(t('account.error_current_password_required'), 'error');
+      return;
+    }
+
     const origins = originsText
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean);
 
     setSavingPasskeySettings(true);
+    const releaseUnauthorizedSuspend = apiClient.suspendUnauthorizedHandling();
     try {
-      const data = await accountApi.savePasskeySettings({ rp_id: rpId.trim(), origins });
+      const data = await accountApi.savePasskeySettings({
+        rp_id: rpId.trim(),
+        origins,
+        ...(requiresCurrentPassword ? { current_password: passkeySettingsPassword } : {}),
+      });
       setAccount(data);
+      setPasskeySettingsPassword('');
       showNotification(t('account.passkey_settings_saved'), 'success');
     } catch (err: unknown) {
-      const message = getErrorMessage(err);
-      showNotification(
-        `${t('account.passkey_settings_save_failed')}${message ? `: ${message}` : ''}`,
-        'error'
-      );
+      if (isRateLimited(err)) {
+        showNotification(t('account.error_rate_limited'), 'error');
+      } else {
+        const message = getErrorMessage(err);
+        showNotification(
+          `${t('account.passkey_settings_save_failed')}${message ? `: ${message}` : ''}`,
+          'error'
+        );
+      }
     } finally {
+      releaseUnauthorizedSuspend();
       setSavingPasskeySettings(false);
     }
-  }, [originsText, rpId, showNotification, t]);
+  }, [originsText, passkeySettingsPassword, requiresCurrentPassword, rpId, showNotification, t]);
 
   const handleAddPasskey = useCallback(async () => {
     if (typeof window === 'undefined') return;
+    if (requiresCurrentPassword && !addPasskeyPassword) {
+      showNotification(t('account.error_current_password_required'), 'error');
+      return;
+    }
     const suggested = guessDeviceName(navigator.userAgent);
     const name = window.prompt(t('account.passkey_name_prompt'), suggested);
     if (!name) return;
 
     setAddingPasskey(true);
     try {
-      const begin = await accountApi.passkeysBegin();
+      const begin = await accountApi.passkeysBegin(
+        requiresCurrentPassword ? { current_password: addPasskeyPassword } : undefined
+      );
       const options = creationOptionsFromJSON(
         begin.options as { publicKey: Record<string, unknown> }
       );
@@ -194,6 +246,7 @@ export function AccountPage() {
         credential: credentialJSON,
       });
       setAccount((prev) => (prev ? { ...prev, passkeys: [...prev.passkeys, passkey] } : prev));
+      setAddPasskeyPassword('');
       showNotification(t('account.passkey_added'), 'success');
     } catch (err: unknown) {
       if (
@@ -202,15 +255,24 @@ export function AccountPage() {
       ) {
         return;
       }
-      const message = getErrorMessage(err);
-      showNotification(
-        `${t('account.passkey_add_failed')}${message ? `: ${message}` : ''}`,
-        'error'
-      );
+      const status = (err as Partial<ApiError>)?.status;
+      if (status === 410) {
+        // The ceremony challenge expired or was already used (registration failures are 410/400,
+        // never 401 — a wrong ceremony is not an authentication failure).
+        showNotification(t('account.passkey_ceremony_expired'), 'error');
+      } else if (isRateLimited(err)) {
+        showNotification(t('account.error_rate_limited'), 'error');
+      } else {
+        const message = getErrorMessage(err);
+        showNotification(
+          `${t('account.passkey_add_failed')}${message ? `: ${message}` : ''}`,
+          'error'
+        );
+      }
     } finally {
       setAddingPasskey(false);
     }
-  }, [showNotification, t]);
+  }, [addPasskeyPassword, requiresCurrentPassword, showNotification, t]);
 
   const handleRenamePasskey = useCallback(
     async (passkey: AccountPasskey) => {
@@ -278,12 +340,15 @@ export function AccountPage() {
       confirmText: t('account.sign_out_all_button'),
       onConfirm: async () => {
         setSigningOutAll(true);
+        // Sign-out-all rotates session-secret and clears the caller's own cookie as a side
+        // effect: an incidental 401 during this window must not also trigger a surprise global
+        // logout before we get to handle it (navigate away) ourselves, below.
+        const releaseUnauthorizedSuspend = apiClient.suspendUnauthorizedHandling();
         try {
           await accountApi.signOutAll();
           showNotification(t('account.signed_out_all'), 'success');
-          // Sign-out-all rotates session-secret, invalidating every session (including this
-          // browser's). A key-mode admin's auth doesn't go through sessions at all, so they stay
-          // logged in; only a session-mode caller needs to be logged out locally too.
+          // A key-mode admin's auth doesn't go through sessions at all, so they stay logged in;
+          // only a session-mode caller needs to be logged out locally too.
           if (authMode === 'session') {
             await logout();
             navigate('/login', { replace: true });
@@ -295,6 +360,7 @@ export function AccountPage() {
             'error'
           );
         } finally {
+          releaseUnauthorizedSuspend();
           setSigningOutAll(false);
         }
       },
@@ -304,12 +370,26 @@ export function AccountPage() {
   const passkeysAvailable = Boolean(account?.passkey_rp_id) && account?.configured;
   const canAddPasskey = passkeysAvailable && supportsPasskeys();
 
+  if (!loadingAccount && loadError) {
+    return (
+      <div className={styles.container}>
+        <h1 className={styles.pageTitle}>{t('account.title')}</h1>
+        <div className={styles.content}>
+          <Card>
+            <div className="error-box">{loadError}</div>
+            <div className={styles.actionRow}>
+              <Button onClick={loadAccount}>{t('account.retry_button')}</Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container}>
       <h1 className={styles.pageTitle}>{t('account.title')}</h1>
       <div className={styles.content}>
-        {loadError && <div className="error-box">{loadError}</div>}
-
         <Card title={t('account.credentials_title')}>
           <p className={styles.sectionDescription}>
             {account?.configured
@@ -388,6 +468,9 @@ export function AccountPage() {
                   onChange={(e) => setRpId(e.target.value)}
                   hint={t('account.passkey_rp_id_hint')}
                 />
+                {rpIdChanged && (
+                  <div className="status-badge warning">{t('account.rp_id_change_warning')}</div>
+                )}
                 <div className="form-group">
                   <label>{t('account.passkey_origins_label')}</label>
                   <textarea
@@ -398,6 +481,16 @@ export function AccountPage() {
                   />
                   <div className="hint">{t('account.passkey_origins_hint')}</div>
                 </div>
+                {requiresCurrentPassword && (
+                  <Input
+                    label={t('account.current_password_label')}
+                    type="password"
+                    value={passkeySettingsPassword}
+                    onChange={(e) => setPasskeySettingsPassword(e.target.value)}
+                    autoComplete="current-password"
+                    hint={t('account.current_password_required_hint')}
+                  />
+                )}
                 <div className={styles.actionRow}>
                   <Button onClick={handleSavePasskeySettings} loading={savingPasskeySettings}>
                     {t('common.save')}
@@ -406,9 +499,19 @@ export function AccountPage() {
               </div>
             </Card>
 
-            <Card
-              title={t('account.passkeys_title')}
-              extra={
+            <Card title={t('account.passkeys_title')}>
+              <p className={styles.sectionDescription}>{t('account.passkeys_desc')}</p>
+              {requiresCurrentPassword && (
+                <Input
+                  label={t('account.current_password_label')}
+                  type="password"
+                  value={addPasskeyPassword}
+                  onChange={(e) => setAddPasskeyPassword(e.target.value)}
+                  autoComplete="current-password"
+                  hint={t('account.current_password_required_hint')}
+                />
+              )}
+              <div className={styles.actionRow}>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -419,9 +522,7 @@ export function AccountPage() {
                 >
                   {t('account.add_passkey_button')}
                 </Button>
-              }
-            >
-              <p className={styles.sectionDescription}>{t('account.passkeys_desc')}</p>
+              </div>
               {account.passkeys.length === 0 ? (
                 <div className="hint">{t('account.no_passkeys')}</div>
               ) : (

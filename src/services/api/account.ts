@@ -18,6 +18,13 @@ export interface SaveAccountPayload {
 export interface SavePasskeySettingsPayload {
   rp_id: string;
   origins: string[];
+  /** Required over a session (403 otherwise); never required over the management key. */
+  current_password?: string;
+}
+
+export interface PasskeysBeginPayload {
+  /** Required over a session (403 otherwise); never required over the management key. */
+  current_password?: string;
 }
 
 export const accountApi = {
@@ -29,7 +36,8 @@ export const accountApi = {
   savePasskeySettings: (payload: SavePasskeySettingsPayload) =>
     apiClient.put<AccountView>(`${BASE}/passkey-settings`, payload),
 
-  passkeysBegin: () => apiClient.post<PasskeyCeremonyBegin>(`${BASE}/passkeys/begin`),
+  passkeysBegin: (payload?: PasskeysBeginPayload) =>
+    apiClient.post<PasskeyCeremonyBegin>(`${BASE}/passkeys/begin`, payload),
 
   passkeysFinish: (payload: { ceremony_id: string; name: string; credential: unknown }) =>
     apiClient.post<AccountPasskey>(`${BASE}/passkeys/finish`, payload),

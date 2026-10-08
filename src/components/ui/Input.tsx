@@ -2,8 +2,6 @@ import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
-  /** Rendered directly under the label (e.g. a sponsor link, or an invisible placeholder row used to align same-row fields). */
-  labelExtra?: ReactNode;
   hint?: ReactNode;
   error?: string;
   rightElement?: ReactNode;
@@ -11,7 +9,6 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export function Input({
   label,
-  labelExtra,
   hint,
   error,
   rightElement,
@@ -29,7 +26,6 @@ export function Input({
   return (
     <div className="form-group">
       {label && <label htmlFor={inputId}>{label}</label>}
-      {labelExtra}
       <div style={{ position: 'relative' }}>
         <input
           id={inputId}

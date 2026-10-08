@@ -115,7 +115,6 @@
   },
   "nav": {
     "dashboard": "Панель",
-    "quick_start": "Быстрый старт",
     "ai_providers": "Поставщики AI",
     "auth_files": "Файлы аутентификации",
     "oauth": "OAuth вход",
@@ -135,7 +134,6 @@
   },
   "nav_meta": {
     "dashboard": "Обзор работы",
-    "quick_start": "Настройка APIKEY.FUN",
     "ai_providers": "Маршрутизация моделей",
     "auth_files": "Файлы и учётные данные",
     "oauth": "Авторизация OAuth",
@@ -821,8 +819,6 @@
     "devin_callback_placeholder": "http://127.0.0.1:<порт-сервера>/devin/callback?code=...&state=...",
     "devin_callback_invalid": "Вставьте полный URL обратного вызова http/https со state и кодом авторизации или ошибкой.",
     "devin_callback_state_mismatch": "Этот обратный вызов не относится к текущему входу в Devin. Используйте конечный URL этой попытки, а не старый URL.",
-    "recommended_provider_section": "Рекомендуемый провайдер",
-    "recommended_provider_badge": "Рекомендуемый провайдер",
     "other_oauth_providers": "Другие провайдеры OAuth",
     "other_login_methods": "Другие способы входа",
     "codex_oauth_title": "Codex OAuth",
@@ -884,7 +880,6 @@
     "kimi_ai_oauth_polling_error": "Не удалось проверить статус авторизации:",
     "kimi_oauth_title": "Kimi — китайский сайт (kimi.com)",
     "kimi_oauth_button": "Войти в Kimi China",
-    "kimi_sign_up_button": "Зарегистрироваться сейчас",
     "kimi_oauth_hint": "Войдите в китайский аккаунт kimi.com через авторизацию устройства. Файлы сохраняются автоматически. Для международных аккаунтов используйте отдельный вход kimi.ai.",
     "kimi_oauth_url_label": "URL авторизации:",
     "kimi_open_link": "Открыть ссылку",
@@ -1389,7 +1384,6 @@
           "title": "Сетевые настройки",
           "description": "Параметры прокси, повторов и маршрутизации",
           "proxy_url": "URL прокси",
-          "proxy_url_sponsor_hint": "Нет подходящего прокси?",
           "request_retry": "Количество повторов запросов",
           "max_retry_credentials": "Максимум учётных данных для повторов",
           "max_retry_credentials_hint": "Оставьте пустым, чтобы не задавать поле. Значение 0 или отрицательное целое число позволяет перебрать все доступные учётные данные.",
@@ -2003,7 +1997,6 @@
     },
     "categories": {
       "title": "Провайдеры",
-      "quickFill": "Быстрое заполнение",
       "activeCount": "{{active}}/{{total}} активных"
     },
     "providerNames": {
@@ -2014,11 +2007,7 @@
       "xai": "xAI",
       "claude": "Claude",
       "vertex": "Vertex",
-      "openaiCompatibility": "OpenAI-совместимый",
-      "apikeyFun": "APIKEY.FUN",
-      "fennoAI": "FennoAI",
-      "qiniuCloud": "Qiniu Cloud",
-      "kimi": "Kimi"
+      "openaiCompatibility": "OpenAI-совместимый"
     },
     "table": {
       "key": "Ключ",
@@ -2038,78 +2027,6 @@
       "empty": "Нет ресурсов, нажмите \"Создать\".",
       "filterPlaceholder": "Поиск по ключам, URL, префиксам…",
       "description": "Управление ресурсами {{route}}"
-    },
-    "sponsor": {
-      "protocolSummary": "Anthropic / OpenAI / Gemini / Codex API (Responses)",
-      "detailHint": "{{provider}} сохраняется в соответствующие конфигурации API key по протоколам; здесь они управляются вместе.",
-      "registerLink": "Зарегистрироваться",
-      "registerNow": "Зарегистрироваться сейчас",
-      "kimiPromo": "Новые пользователи получают API-квоту в размере 10% от первого успешного пополнения, максимум ¥1000. Предложение действует до 30 сентября.",
-      "dashboardLink": "Панель управления",
-      "emptyRegisterHint": "Конфигурации пока нет.",
-      "apiKeyHint": "Этот ключ записывается только в выбранную группу/протокол.",
-      "usageCheck": "Проверить квоту",
-      "usageChecking": "Проверка",
-      "usageRemaining": "Остаток: {{amount}} {{unit}}",
-      "usageBreakdown": "Использовано {{used}} / Лимит {{limit}}",
-      "usageStatus": "Статус: {{status}}",
-      "usageInvalid": "Недействительный ключ",
-      "usageEmpty": "Endpoint не вернул данные квоты.",
-      "usageApiKeyRequired": "Требуется API key",
-      "aggregationConflict": "Этот объединённый провайдер содержит несколько серверных конфигураций или ключей OpenAI. Чтобы избежать потери данных, измените исходную конфигурацию.",
-      "partialMutationWarning": "Операция завершилась ошибкой, но один или несколько протоколов могли обновиться. Последняя конфигурация загружена повторно; проверьте её перед повторной попыткой.",
-      "groupedKeysTitle": "Групповые ключи",
-      "groupedKeysHint": "Ключи платформы могут привязываться к группе при создании. Каждый групповой ключ здесь управляет одним протоколом, а модели загружаются только из этого протокола.",
-      "groupedKey": "Групповой ключ #{{index}}",
-      "addGroupedKey": "Добавить групповой ключ",
-      "removeGroupedKey": "Удалить групповой ключ",
-      "protocol": "Группа/протокол",
-      "protocolHint": "Выберите группу/протокол для этого ключа.",
-      "protocolEndpoint": "Текущий endpoint протокола",
-      "urlMode": "{{provider}} URL",
-      "urlHint": "Все URL используют одинаковые правила API. При сохранении записывается только endpoint текущего группового протокола.",
-      "urlOptions": {
-        "standard": "Обычный URL",
-        "direct": "Прямой URL",
-        "domestic": "Маршрут для материкового Китая",
-        "overseas": "Зарубежный маршрут",
-        "mainlandChina": "Материковый Китай (рекомендуется)",
-        "global": "Глобальный"
-      },
-      "urlOptionDescriptions": {
-        "domestic": "Для пользователей и нагрузок в материковом Китае; обычно дает меньшую задержку в сетях материкового Китая.",
-        "overseas": "Для зарубежных развертываний, трансграничного доступа или задач, которым нужны зарубежные модели.",
-        "mainlandChinaRecommended": "Рекомендуется для пользователей и нагрузок в сетях материкового Китая.",
-        "global": "Для пользователей и нагрузок во всех остальных регионах."
-      },
-      "modelsTitle": "Настройки моделей по протоколам",
-      "modelsHint": "Настраивайте allowlist моделей и алиасы отдельно для маршрутов Codex API, Anthropic, Gemini и OpenAI-compatible.",
-      "protocolModels": {
-        "codex": "Модели Codex API",
-        "anthropic": "Модели Anthropic",
-        "gemini": "Модели Gemini",
-        "openai": "Модели OpenAI-compatible"
-      },
-      "protocolModelHints": {
-        "codex": "Записывается в models конфигурации Codex API. Можно загрузить из /v1/models и задать алиасы.",
-        "anthropic": "Записывается в models конфигурации Anthropic. Можно загрузить из /v1/models и задать алиасы.",
-        "gemini": "Записывается в models конфигурации Gemini. Можно загрузить из /v1beta/models и задать алиасы.",
-        "openai": "Записывается в models конфигурации OpenAI-compatible. Можно загрузить из /models и задать алиасы."
-      },
-      "validation": {
-        "keyRequired": "Введите API key для каждого группового ключа.",
-        "protocolDuplicate": "Для каждого протокола можно добавить только один групповой ключ."
-      },
-      "openaiEntries": "Ключей OpenAI-compatible",
-      "codexEntries": "Ключей Codex API",
-      "anthropicEntries": "Ключей Anthropic",
-      "geminiEntries": "Ключей Gemini",
-      "protocols": {
-        "anthropic": "Anthropic",
-        "openai": "OpenAI-compatible",
-        "gemini": "Gemini",
-        "codexResponses": "Codex API (Responses)"
-      }
     },
     "status": {
       "active": "Активен",

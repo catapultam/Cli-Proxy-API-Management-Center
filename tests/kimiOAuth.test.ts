@@ -3,10 +3,6 @@ import { readFileSync } from 'node:fs';
 import { apiClient } from '@/services/api/client';
 import { oauthApi } from '@/services/api/oauth';
 import { createOAuthAttempts } from '@/pages/oauthAttempts';
-import {
-  KIMI_CHINESE_AFFILIATE_URL,
-  KIMI_INTERNATIONAL_AFFILIATE_URL,
-} from '@/features/providers/kimi';
 
 describe('Kimi regional login', () => {
   test('uses separate provider parameters and preserves cancellation', async () => {
@@ -41,15 +37,10 @@ describe('Kimi regional login', () => {
     }
   });
 
-  test('offers both cards with site-specific registration links', () => {
+  test('offers both regional login cards', () => {
     const source = readFileSync('src/pages/OAuthPage.tsx', 'utf8');
     expect(source).toContain("id: 'kimi-ai'");
     expect(source).toContain("id: 'kimi'");
-    expect(source).toMatch(
-      /provider.id === 'kimi-ai'\s*\? KIMI_INTERNATIONAL_AFFILIATE_URL\s*: KIMI_CHINESE_AFFILIATE_URL/
-    );
-    expect(new URL(KIMI_CHINESE_AFFILIATE_URL).hostname).toBe('platform.kimi.com');
-    expect(new URL(KIMI_INTERNATIONAL_AFFILIATE_URL).hostname).toBe('platform.kimi.ai');
   });
 
   for (const locale of ['en', 'zh-CN', 'zh-TW', 'ru']) {
@@ -58,7 +49,7 @@ describe('Kimi regional login', () => {
         readFileSync(`src/i18n/locales/${locale}.json`, 'utf8')
       ) as { auth_login: Record<string, string> };
       for (const key of Object.keys(messages).filter((key) => key.startsWith('kimi_'))) {
-        if (key.startsWith('kimi_ai_') || key === 'kimi_sign_up_button') continue;
+        if (key.startsWith('kimi_ai_')) continue;
         expect(messages[key.replace('kimi_', 'kimi_ai_')]).toBeTruthy();
       }
       expect(messages.kimi_oauth_title).toContain('kimi.com');

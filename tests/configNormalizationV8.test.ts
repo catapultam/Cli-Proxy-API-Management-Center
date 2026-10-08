@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { normalizeConfigResponse } from '../src/services/api/transformers';
+import { openaiToResource } from '../src/features/providers/adapters';
 
 describe('v8 persisted configuration normalization', () => {
   test('uses backend AI Studio authentication default when the persisted field is absent', () => {
@@ -29,5 +30,26 @@ describe('v8 persisted configuration normalization', () => {
     expect(config.codexApiKeys).toEqual([]);
     expect(config.proxyUrl).toBe('https://current.invalid');
     expect(config.wsAuth).toBe(true);
+  });
+});
+
+describe('openai-compatibility backend indexes', () => {
+  test('keeps backend indexes when normalization filters an unnamed item', () => {
+    const config = normalizeConfigResponse({
+      'api-keys': {
+        'openai-compatibility': [
+          { 'base-url': 'https://invalid.example.com/v1', keys: [] },
+          { name: 'a', 'base-url': 'https://a.example.com/v1', keys: [{ 'api-key': 'key-a' }] },
+          { name: 'b', 'base-url': 'https://b.example.com/v1', keys: [{ 'api-key': 'key-b' }] },
+        ],
+      },
+    });
+
+    expect(config.openaiCompatibility?.map((item) => item.sourceIndex)).toEqual([1, 2]);
+    expect(openaiToResource(config.openaiCompatibility![1], 1).selector).toEqual({
+      brand: 'openaiCompatibility',
+      name: 'b',
+      index: 2,
+    });
   });
 });

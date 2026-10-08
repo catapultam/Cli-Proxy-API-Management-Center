@@ -13,7 +13,6 @@ import {
   ProxyUrlField,
   QuotaSwitchPreviewModelToggle,
   QuotaSwitchProjectToggle,
-  SponsorHintSpacer,
 } from '../fields/sharedFields';
 
 const Icon = CONFIG_TAB_ICONS.common;
@@ -41,19 +40,8 @@ export function SectionCommon({
     >
       <FieldStack>
         <FieldGrid>
-          <HostField
-            values={values}
-            disabled={disabled}
-            onChange={onChange}
-            labelExtra={<SponsorHintSpacer minTracks={4} />}
-          />
-          <PortField
-            values={values}
-            disabled={disabled}
-            onChange={onChange}
-            error={portError}
-            labelExtra={<SponsorHintSpacer minTracks={4} />}
-          />
+          <HostField values={values} disabled={disabled} onChange={onChange} />
+          <PortField values={values} disabled={disabled} onChange={onChange} error={portError} />
           <ProxyUrlField values={values} disabled={disabled} onChange={onChange} />
         </FieldGrid>
 

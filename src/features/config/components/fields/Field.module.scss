@@ -4,12 +4,8 @@
    search anchor. Interaction feedback always references the global motion tokens
    (--dur-* / --ease-out-strong). */
 
-/* FieldGrid's own column math, reused below to compute the exact container width at
-   which a given column joins row 1 (see .fieldSponsorSpacer). Keep these in sync with
-   the grid-template-columns value a few lines down — they are the same grid. */
 $field-col-min: 240px;
 $field-col-gap: 14px;
-$field-col-pitch: $field-col-min + $field-col-gap;
 
 /* ---------- 表单控件宿主（原 .visualEditor 的 :global 覆盖收编于此） ---------- */
 
@@ -144,9 +140,6 @@ $field-col-pitch: $field-col-min + $field-col-gap;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax($field-col-min, 1fr));
   gap: $field-col-gap;
-  // Queried below to decide, per field, whether it actually lands in the same grid
-  // row as the sponsor-hint field at the current width (see .fieldSponsorSpacer).
-  container-type: inline-size;
 
   @include mobile {
     grid-template-columns: minmax(0, 1fr);
@@ -179,82 +172,6 @@ $field-col-pitch: $field-col-min + $field-col-gap;
   @include mobile {
     grid-column: auto;
   }
-}
-
-/* Sponsor link row under the label (Proxy URL field). A fixed-height flex row, not a
-   line-height-driven block: the inline-flex badge inside (.fieldSponsorLink) is 18px
-   border-box, and without an explicit row height the line box it sits in rounds up to
-   ~20px, throwing this row 2px taller than its placeholder twin (.fieldSponsorSpacer).
-   Pinning both to the same 18px box keeps same-row fields' inputs aligned. */
-.fieldSponsorHint {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 18px;
-  margin: -2px 0 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* Invisible placeholder, same font size and height as the sponsor row: fields with no
-   sponsor hint of their own use it to match the label-area height of whichever field
-   does. Hidden by default — see the @container rules below — because on narrow/mobile
-   widths (single column) nothing ever shares a row with the sponsor field, and on
-   desktop only the specific columns that actually land in its row need it. */
-.fieldSponsorSpacer {
-  display: none;
-  margin: -2px 0 0;
-  min-height: 18px;
-  font-size: 12px;
-  line-height: 1.5;
-  visibility: hidden;
-}
-
-/* FieldGrid is `repeat(auto-fit, minmax($field-col-min, 1fr))`: the number of tracks
-   that fit a given container width is deterministic, so "does column N share row 1
-   with the sponsor field" is too. A field needing its Nth track becomes visible once
-   the container is wide enough for N tracks (grid width >= N * pitch - gap). Each
-   consumer passes its track number via SponsorHintSpacer's `minTracks` prop (rendered
-   as `data-min-tracks`) — see sharedFields.tsx / SectionNetwork.tsx for the mapping. */
-@for $n from 3 through 10 {
-  @container (min-width: #{$n * $field-col-pitch - $field-col-gap}) {
-    .fieldSponsorSpacer[data-min-tracks='#{$n}'] {
-      display: block;
-    }
-  }
-}
-
-/* Highlighted link that reads as part of the sentence: same font size, reusing the
-   site-wide amber badge recipe, darkens on hover. Fixed border-box height (matches
-   .fieldSponsorHint's 18px row) rather than sizing from content, so this row renders
-   the same height as .fieldSponsorSpacer's plain-text row. */
-.fieldSponsorLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 18px;
-  box-sizing: border-box;
-  padding: 0 5px;
-  border: 1px solid var(--amber-30);
-  border-radius: 5px;
-  background: var(--amber-10);
-  color: var(--amber-text);
-  font-weight: 600;
-  line-height: 1;
-  text-decoration: none;
-  transition: background-color 0.15s ease;
-
-  &:hover {
-    background: var(--amber-30);
-    text-decoration: none;
-  }
-}
-
-.fieldSponsorLogo {
-  display: block;
-  width: auto;
-  height: 13px;
 }
 
 .fieldHighlightActive {

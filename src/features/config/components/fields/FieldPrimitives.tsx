@@ -102,7 +102,6 @@ export function FieldShell({
   label,
   labelId,
   htmlFor,
-  labelExtra,
   hint,
   hintId,
   error,
@@ -112,8 +111,6 @@ export function FieldShell({
   label: string;
   labelId?: string;
   htmlFor?: string;
-  /** Rendered between the label and `children`; see Input's `labelExtra`. */
-  labelExtra?: ReactNode;
   hint?: string;
   hintId?: string;
   error?: string;
@@ -125,7 +122,6 @@ export function FieldShell({
       <label id={labelId} htmlFor={htmlFor} className={styles.fieldLabel}>
         {label}
       </label>
-      {labelExtra}
       {children}
       {error ? (
         <div id={errorId} className="error-box">

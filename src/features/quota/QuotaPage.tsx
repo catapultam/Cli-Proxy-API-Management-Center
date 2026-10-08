@@ -1,11 +1,16 @@
 /**
- * 额度查询页：提供商 tabs + 统一卡网格。
+ * Quota page: provider tabs + unified card grid.
  *
- * 保留的行为契约（重设计不改）：
- * - 现有提供商保持点击加载；Devin 首次可见时主动查询一次，不轮询；
- * - cacheGeneration 会话隔离 + request-id 去重（见 useQuotaBatchLoader）；
- * - 文件列表变化后按 provider 剪枝额度缓存（已删文件不残留）；
- * - useHeaderRefresh 单槽位：本页唯一注册者，全局刷新 = 重取文件列表。
+ * Preserved behavior contract (not touched by this redesign):
+ * - Existing providers' cards still load their quota on click; Devin's card
+ *   auto-queries once when it first becomes visible, not on a timer;
+ * - "Refresh all" now also runs automatically on an interval while the page
+ *   is open (see useQuotaAutoRefresh); a manual refresh resets the countdown;
+ * - cacheGeneration session isolation + request-id dedupe (see useQuotaBatchLoader);
+ * - Credential cache is pruned per provider once the file list settles (deleted
+ *   files never linger);
+ * - useHeaderRefresh is single-slot: this page is its only registrant, and a
+ *   global refresh means re-fetching the file list.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,6 +36,7 @@ import {
   QUOTA_PAGE_SIZE,
   QUOTA_SORT_MODES,
   QUOTA_TAB_ORDER,
+  type QuotaAutoRefreshMs,
   type QuotaSortMode,
   type QuotaTabId,
 } from './constants';
@@ -49,7 +55,9 @@ import { QUOTA_ADAPTERS, getQuotaSetter, type QuotaCardState } from './providers
 import type { QuotaProviderType } from './providers/types';
 import { useDevinQuotaAutoLoad } from './providers/devin/useDevinQuotaAutoLoad';
 import { useQuotaActions } from './hooks/useQuotaActions';
+import { useQuotaAutoRefresh } from './hooks/useQuotaAutoRefresh';
 import { useQuotaBatchLoader } from './hooks/useQuotaBatchLoader';
+import { readQuotaAutoRefreshMs, writeQuotaAutoRefreshMs } from './autoRefreshStorage';
 import { readQuotaUiState, writeQuotaUiState } from './uiState';
 import styles from './QuotaPage.module.scss';
 
@@ -245,12 +253,40 @@ export function QuotaPage() {
   const pendingRefreshRef = useRef<number | null>(null);
   const prevLoadingRef = useRef(loading);
 
-  // 刷新全部：先重取文件列表，待其落定（loading 下降沿）再批量拉当前页额度
+  // Auto-refresh interval preference: persisted in localStorage across browser
+  // sessions (unlike the tab/sort prefs in uiState.ts, which are session-only).
+  const [autoRefreshMs, setAutoRefreshMs] = useState<QuotaAutoRefreshMs>(() =>
+    readQuotaAutoRefreshMs()
+  );
+  const handleAutoRefreshChange = useCallback((next: QuotaAutoRefreshMs) => {
+    setAutoRefreshMs(next);
+    writeQuotaAutoRefreshMs(next);
+  }, []);
+
+  // Timestamp of the last refresh of any kind (manual click or auto-refresh
+  // tick) — recorded here, in the one place both paths go through, so a
+  // manual refresh always resets the auto-refresh countdown.
+  const [lastRefreshAt, setLastRefreshAt] = useState(() => Date.now());
+
+  // Refresh all: re-fetch the file list first, then once it settles (loading's
+  // falling edge) batch-load quota for the current page.
   const handleRefreshAll = useCallback(() => {
     if (disableControls) return;
+    setLastRefreshAt(Date.now());
     pendingRefreshRef.current = sessionGeneration;
     void loadFiles();
   }, [disableControls, loadFiles, sessionGeneration]);
+
+  // Periodic auto-refresh while the page is open: same effect as a manual
+  // "Refresh all" click, gated on the interval, connection, idle state, and
+  // tab visibility (see useQuotaAutoRefresh for the scheduling rules).
+  useQuotaAutoRefresh({
+    intervalMs: autoRefreshMs,
+    disabled: disableControls,
+    busy: loading || batchLoading,
+    lastRefreshAt,
+    onRefresh: handleRefreshAll,
+  });
 
   useEffect(() => {
     const wasLoading = prevLoadingRef.current;
@@ -310,7 +346,10 @@ export function QuotaPage() {
 
   /* ---------- 渲染 ---------- */
 
-  const isEmpty = !loading && filteredEntries.length === 0;
+  // Skeletons only until this session's first file list lands: a refresh (manual or automatic)
+  // keeps the current cards on screen instead of blanking the grid every few minutes.
+  const showSkeleton = loading && filesGeneration !== sessionGeneration;
+  const isEmpty = !showSkeleton && filteredEntries.length === 0;
 
   return (
     <div className={styles.page} ref={revealRef}>
@@ -321,6 +360,8 @@ export function QuotaPage() {
         refreshing={loading || batchLoading}
         disableControls={disableControls}
         onRefreshAll={handleRefreshAll}
+        autoRefreshMs={autoRefreshMs}
+        onAutoRefreshChange={handleAutoRefreshChange}
       />
 
       <section className={styles.workbench}>
@@ -379,7 +420,7 @@ export function QuotaPage() {
           </div>
         )}
 
-        {loading ? (
+        {showSkeleton ? (
           <div className={styles.grid} aria-hidden="true">
             {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
               <Skeleton key={index} height={168} rounded={14} />
@@ -431,7 +472,7 @@ export function QuotaPage() {
           </div>
         )}
 
-        {!loading && filteredEntries.length > QUOTA_PAGE_SIZE && (
+        {!showSkeleton && filteredEntries.length > QUOTA_PAGE_SIZE && (
           <div className={styles.pagination}>
             <Button
               variant="secondary"

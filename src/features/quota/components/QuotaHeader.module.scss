@@ -79,8 +79,24 @@
 .actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 10px;
   flex-shrink: 0;
+}
+
+/* 自动刷新间隔选择器：隐去视觉上的「标签」，靠 aria-label 读出，只留一个
+ * 不抢眼的文字提示，和「刷新全部」按钮并排。 */
+.autoRefresh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.autoRefreshLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 /* 墨色药丸主按钮（深色主题自动反相） */

@@ -23,3 +23,20 @@ export type QuotaSortMode = (typeof QUOTA_SORT_MODES)[number];
 
 /** 与 useRevealGroup 的 GROUP_MAX_TOTAL 一致：卡片级联总预算 360ms。 */
 export const CARD_ENTRANCE_BUDGET_MS = 360;
+
+/** Auto-refresh interval options for the Quota page: Off / 1 / 5 / 15 / 30 minutes. */
+export const QUOTA_AUTO_REFRESH_OPTIONS = [0, 60_000, 300_000, 900_000, 1_800_000] as const;
+
+export type QuotaAutoRefreshMs = (typeof QUOTA_AUTO_REFRESH_OPTIONS)[number];
+
+/** Default auto-refresh interval: 5 minutes. */
+export const QUOTA_AUTO_REFRESH_DEFAULT_MS: QuotaAutoRefreshMs = 300_000;
+
+/** i18n label-key suffix for each interval option (quota_management.auto_refresh_<key>). */
+export const QUOTA_AUTO_REFRESH_LABEL_KEYS: Record<QuotaAutoRefreshMs, string> = {
+  0: 'off',
+  60_000: '1m',
+  300_000: '5m',
+  900_000: '15m',
+  1_800_000: '30m',
+};

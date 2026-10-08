@@ -14,7 +14,7 @@ import type {
   SessionStatus,
   SessionLoginMethod,
 } from '@/types';
-import { STORAGE_KEY_AUTH, STORAGE_KEY_SESSION_TOKEN } from '@/utils/constants';
+import { STORAGE_KEY_AUTH, STORAGE_KEY_BROWSER_SESSION } from '@/utils/constants';
 import { obfuscatedStorage } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
 import { sessionApi } from '@/services/api/session';
@@ -57,11 +57,16 @@ interface AuthStoreState extends AuthState {
     password: string;
     remember: boolean;
   }) => Promise<void>;
+  /**
+   * The EFFECTIVE remember choice is derived inside this action from `response.remember ?? true`
+   * -- never from what the caller originally requested. An older proxy that doesn't understand
+   * `remember` at all silently issues (and never echoes) a persistent 30-day session regardless
+   * of what was asked, so the request-time choice alone can never be trusted here.
+   */
   applySessionLogin: (
     apiBase: string,
     response: SessionResponse,
-    method: SessionLoginMethod,
-    remember: boolean
+    method: SessionLoginMethod
   ) => Promise<void>;
   /**
    * Adopts a fresh token for the SAME already-logged-in identity (e.g. a password change rotates
@@ -82,6 +87,35 @@ let restoreSessionPromise: Promise<boolean> | null = null;
 
 /** Dedupes the best-effort "clear any stale session cookie" POST across concurrent callers. */
 let pendingSessionLogoutRequest: Promise<void> | null = null;
+
+/**
+ * Set synchronously, immediately before a `set()` call that transitions a BROWSER-ONLY
+ * (`sessionRemember: false`) session's identity away to a non-session state (sign-out, explicit
+ * logout). The INCOMING persisted state at that point looks like an ordinary signed-out/key-mode
+ * write (authMode is no longer `'session'`), so the ordinary per-write guard in the persist
+ * `storage.setItem` below would not otherwise recognize it as something to protect -- but it
+ * must still never clobber another tab's remembered identity in the shared blob, since only this
+ * tab's own (never-shared) browser-only session is ending. Read and cleared by the very next
+ * `setItem` call, which happens synchronously inside the `set()` call that follows.
+ */
+let protectSharedBlobOnNextWrite = false;
+
+/**
+ * The identity fields a browser-only (`sessionRemember: false`) session's write must never
+ * clobber in the shared localStorage blob: another tab's remembered identity (or lack thereof)
+ * must survive untouched regardless of what this tab's own, intentionally never-shared, session
+ * looks like. apiBase belongs with them: a token is only meaningful for the server it came from,
+ * so letting a browser-only tab write its own apiBase next to another tab's token would send that
+ * token to the wrong server on the next reload. The rest (serverVersion, ...) is display info.
+ */
+const PERSISTED_IDENTITY_FIELDS = [
+  'apiBase',
+  'authMode',
+  'sessionTransport',
+  'managementKey',
+  'sessionRemember',
+  'rememberPassword',
+] as const;
 
 /**
  * Fires `POST session/logout` best-effort: never throws, and the caller never awaits it (clearing
@@ -145,38 +179,62 @@ async function fetchSessionStatusSafely(
 }
 
 /**
- * sessionStorage-backed home for the bearer token of a `sessionRemember: false` session: it
- * survives a reload (sessionStorage outlives a navigation within the same tab) but not a full
- * browser restart, unlike localStorage. Every access is wrapped in try/catch: `sessionStorage`
- * does not exist at all under the bun test runner (no DOM), and real browsers can throw on access
- * in a private window or when site data is blocked.
+ * A browser-only (`sessionRemember: false`) session's full identity, as held in THIS tab's
+ * sessionStorage -- never in the shared localStorage blob (see the persist `storage.setItem`
+ * guard below). sessionStorage is not shared across tabs/windows even on the same origin, which
+ * is exactly the point: this record lets a reload of THIS tab recover its own browser-only
+ * identity without ever having been visible to -- or now colliding with -- any other open tab.
  */
-function writeSessionTokenBestEffort(token: string): void {
+interface BrowserSessionRecord {
+  apiBase: string;
+  authMode: 'session';
+  sessionTransport: SessionTransport;
+  /** Only present for bearer transport. A cookie-transport browser session carries no token at
+   * all here: the (already non-persistent, Max-Age-less) session cookie IS the credential, and
+   * the browser itself drops it on restart with no JS help needed. */
+  token?: string;
+  remember: false;
+}
+
+/**
+ * Every access below is wrapped in try/catch: `sessionStorage` does not exist at all under the
+ * bun test runner (no DOM), and real browsers can throw on access in a private window or when
+ * site data is blocked.
+ */
+function writeBrowserSessionRecordBestEffort(record: BrowserSessionRecord): void {
   try {
     if (typeof sessionStorage === 'undefined') return;
-    if (!token) {
-      sessionStorage.removeItem(STORAGE_KEY_SESSION_TOKEN);
-      return;
+    sessionStorage.setItem(STORAGE_KEY_BROWSER_SESSION, JSON.stringify(record));
+  } catch {
+    // Best-effort: a browser-only session just won't survive a reload in this environment.
+  }
+}
+
+function readBrowserSessionRecordBestEffort(): BrowserSessionRecord | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(STORAGE_KEY_BROWSER_SESSION);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<BrowserSessionRecord> | null;
+    if (!parsed || typeof parsed.apiBase !== 'string' || parsed.authMode !== 'session') {
+      return null;
     }
-    sessionStorage.setItem(STORAGE_KEY_SESSION_TOKEN, token);
+    return {
+      apiBase: parsed.apiBase,
+      authMode: 'session',
+      sessionTransport: parsed.sessionTransport === 'cookie' ? 'cookie' : 'bearer',
+      token: typeof parsed.token === 'string' ? parsed.token : undefined,
+      remember: false,
+    };
   } catch {
-    // Best-effort: a non-remembered session just won't survive a reload in this environment.
+    return null;
   }
 }
 
-function readSessionTokenBestEffort(): string {
-  try {
-    if (typeof sessionStorage === 'undefined') return '';
-    return sessionStorage.getItem(STORAGE_KEY_SESSION_TOKEN) || '';
-  } catch {
-    return '';
-  }
-}
-
-function clearSessionTokenBestEffort(): void {
+function clearBrowserSessionRecordBestEffort(): void {
   try {
     if (typeof sessionStorage === 'undefined') return;
-    sessionStorage.removeItem(STORAGE_KEY_SESSION_TOKEN);
+    sessionStorage.removeItem(STORAGE_KEY_BROWSER_SESSION);
   } catch {
     // Nothing to recover from here either.
   }
@@ -224,29 +282,32 @@ export const useAuthStore = create<AuthStoreState>()(
               obfuscatedStorage.getItem<string>('apiUrl', { encrypt: true });
             const legacyKey = obfuscatedStorage.getItem<string>('managementKey');
 
-            const {
-              apiBase,
-              managementKey,
-              rememberPassword,
-              authMode,
-              sessionTransport,
-              sessionRemember,
-            } = get();
+            const { apiBase, managementKey, rememberPassword, authMode, sessionTransport } = get();
+            // This tab's browser-only record (if any) carries its own server: the shared blob's
+            // apiBase may belong to another tab's identity.
+            const browserRecord = readBrowserSessionRecordBestEffort();
+            const usingBrowserRecord = Boolean(browserRecord);
             const resolvedBase = normalizeApiBase(
-              apiBase || legacyBase || detectApiBaseFromLocation()
+              browserRecord?.apiBase || apiBase || legacyBase || detectApiBaseFromLocation()
             );
+
+            // A browser-only (remember=false) session keeps its own full identity in THIS tab's
+            // sessionStorage, never in the shared localStorage blob (see the persist
+            // `storage.setItem` guard below, which actively prevents such a session's writes
+            // from ever reaching the blob). So on reload, prefer that record over whatever the
+            // rehydrated blob says -- the blob may legitimately belong to a completely different
+            // identity (e.g. another tab's remembered session) that this tab's writes were never
+            // allowed to touch, including its apiBase (resolved from the record above).
 
             // Check the new session-based login first: an authenticated cookie or a remembered
             // bearer-session token means we can log straight in with no prompt at all.
-            const previousAuthMode = authMode;
-            // A `sessionRemember: false` bearer token is deliberately excluded from the persisted
-            // store (see `partialize` below), so after a reload `managementKey` here is empty for
-            // that case; fall back to the sessionStorage copy written alongside it.
+            const previousAuthMode = usingBrowserRecord ? 'session' : authMode;
+            const effectiveSessionTransport = browserRecord
+              ? browserRecord.sessionTransport
+              : sessionTransport;
             const bearerToken =
-              previousAuthMode === 'session' && sessionTransport === 'bearer'
-                ? managementKey ||
-                  (!sessionRemember ? readSessionTokenBestEffort() : '') ||
-                  undefined
+              previousAuthMode === 'session' && effectiveSessionTransport === 'bearer'
+                ? (usingBrowserRecord ? browserRecord?.token : managementKey) || undefined
                 : undefined;
             const probe = await probeSessionStatus(resolvedBase, bearerToken);
             set({ apiBase: resolvedBase });
@@ -281,11 +342,22 @@ export const useAuthStore = create<AuthStoreState>()(
                 const transport: SessionTransport =
                   bearerToken || !isCookieEligible(resolvedBase) ? 'bearer' : 'cookie';
                 const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
+                const effectiveSessionRemember = usingBrowserRecord ? false : get().sessionRemember;
                 apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
-                if (transport === 'bearer' && !sessionRemember) {
-                  // Re-write it: on a reload this just restates what's already in sessionStorage,
-                  // but after `adoptRotatedToken`/a sliding refresh this keeps the two in sync.
-                  writeSessionTokenBestEffort(tokenForClient);
+                if (effectiveSessionRemember) {
+                  // Defensive: a stale browser-only record for this exact apiBase must not
+                  // outlive a restore that resolves to a remembered identity instead.
+                  clearBrowserSessionRecordBestEffort();
+                } else {
+                  // Re-write it: on a plain reload this just restates what's already there, but
+                  // after `adoptRotatedToken`/a sliding refresh this keeps the two in sync.
+                  writeBrowserSessionRecordBestEffort({
+                    apiBase: resolvedBase,
+                    authMode: 'session',
+                    sessionTransport: transport,
+                    token: transport === 'bearer' ? tokenForClient : undefined,
+                    remember: false,
+                  });
                 }
                 set({
                   isAuthenticated: true,
@@ -293,6 +365,7 @@ export const useAuthStore = create<AuthStoreState>()(
                   managementKey: tokenForClient,
                   authMode: 'session',
                   sessionTransport: transport,
+                  sessionRemember: effectiveSessionRemember,
                   loginMethod: probe.status.method,
                   connectionStatus: 'connected',
                   identityVersion: bumpIdentityVersion(),
@@ -309,7 +382,23 @@ export const useAuthStore = create<AuthStoreState>()(
                 // authenticated request, which this status check never made.
                 clearStaleCookieBestEffort(resolvedBase);
                 apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
-                clearSessionTokenBestEffort();
+                if (usingBrowserRecord) {
+                  // This tab's own browser-only identity is ending: clear ONLY its private
+                  // sessionStorage record. The upcoming `set()` below must not be allowed to
+                  // rewrite the shared blob at all -- it may still legitimately hold a
+                  // completely different (e.g. another tab's remembered) identity that this
+                  // tab's session was never part of in the first place.
+                  clearBrowserSessionRecordBestEffort();
+                  protectSharedBlobOnNextWrite = true;
+                } else {
+                  // A leftover obfuscated legacy managementKey + `isLoggedIn` must not resurrect
+                  // a stale key-mode auto-login on the very next restore. Only touch this shared
+                  // flag when the identity that just signed out was never browser-only to begin
+                  // with -- a browser-only session never sets `isLoggedIn` in the first place
+                  // (see applySessionLogin), so clearing it here could only ever clobber a
+                  // DIFFERENT tab's real, remembered key-mode flag.
+                  localStorage.removeItem('isLoggedIn');
+                }
                 set({
                   isAuthenticated: false,
                   managementKey: '',
@@ -384,6 +473,8 @@ export const useAuthStore = create<AuthStoreState>()(
           // A stale session cookie must never block a key login: clear it best-effort first (it
           // is harmless/no-op if there is nothing to clear, e.g. on a non-cookie-eligible apiBase).
           clearStaleCookieBestEffort(apiBase);
+          // Entering key mode leaves any prior browser-only session behind entirely.
+          clearBrowserSessionRecordBestEffort();
 
           try {
             set({
@@ -427,6 +518,7 @@ export const useAuthStore = create<AuthStoreState>()(
               authMode: 'key',
               sessionTransport: 'bearer',
               loginMethod: 'key',
+              sessionRemember: true,
               connectionStatus: 'connected',
               identityVersion: bumpIdentityVersion(),
             });
@@ -451,7 +543,7 @@ export const useAuthStore = create<AuthStoreState>()(
               password,
               remember,
             });
-            await get().applySessionLogin(normalizedBase, response, 'password', remember);
+            await get().applySessionLogin(normalizedBase, response, 'password');
           } catch (error) {
             set({ connectionStatus: 'error' });
             throw error;
@@ -459,7 +551,7 @@ export const useAuthStore = create<AuthStoreState>()(
         },
 
         // 由密码或 passkey 登录成功后，统一落地会话状态（选择 cookie / bearer 传输方式）
-        applySessionLogin: async (apiBase, response, method, remember) => {
+        applySessionLogin: async (apiBase, response, method) => {
           const normalizedBase = normalizeApiBase(apiBase);
           let transport: SessionTransport = isCookieEligible(normalizedBase) ? 'cookie' : 'bearer';
 
@@ -473,6 +565,11 @@ export const useAuthStore = create<AuthStoreState>()(
             }
           }
 
+          // Never trust the requested flag alone: an older proxy that doesn't understand
+          // `remember` at all silently issues (and never echoes) a persistent 30-day session
+          // regardless of what was asked. The backend's own echoed choice is authoritative.
+          const effectiveRemember = response.remember ?? true;
+
           const tokenForClient = transport === 'bearer' ? response.token : '';
 
           useConfigStore.getState().clearCache();
@@ -480,11 +577,17 @@ export const useAuthStore = create<AuthStoreState>()(
           useQuotaStore.getState().clearQuotaCache();
 
           apiClient.setConfig({ apiBase: normalizedBase, managementKey: tokenForClient });
-          if (transport === 'bearer' && !remember) {
-            writeSessionTokenBestEffort(tokenForClient);
+          if (!effectiveRemember) {
+            writeBrowserSessionRecordBestEffort({
+              apiBase: normalizedBase,
+              authMode: 'session',
+              sessionTransport: transport,
+              token: transport === 'bearer' ? tokenForClient : undefined,
+              remember: false,
+            });
           } else {
-            // Defensive: clear any leftover token from a previous remember=false login/identity.
-            clearSessionTokenBestEffort();
+            // Defensive: clear any leftover record from a previous remember=false login/identity.
+            clearBrowserSessionRecordBestEffort();
           }
           set({
             isAuthenticated: true,
@@ -493,11 +596,18 @@ export const useAuthStore = create<AuthStoreState>()(
             authMode: 'session',
             sessionTransport: transport,
             loginMethod: method,
-            sessionRemember: remember,
+            sessionRemember: effectiveRemember,
             connectionStatus: 'connected',
             identityVersion: bumpIdentityVersion(),
           });
-          localStorage.setItem('isLoggedIn', 'true');
+          // `isLoggedIn` only ever drives the LEGACY key-mode auto-login flow in restoreSession,
+          // which a browser-only session never reaches (it short-circuits on `authMode ===
+          // 'session'` well before that check). Setting it anyway would be a shared-localStorage
+          // write with no purpose for this identity, and no purpose means no business touching a
+          // flag another (real, remembered key-mode) tab might be relying on.
+          if (effectiveRemember) {
+            localStorage.setItem('isLoggedIn', 'true');
+          }
         },
 
         adoptRotatedToken: (apiBase, response) => {
@@ -509,13 +619,28 @@ export const useAuthStore = create<AuthStoreState>()(
           if (normalizedBase !== currentApiBase) return; // defensive: never adopt across a switch.
           apiClient.setToken(response.token);
           set({ managementKey: response.token });
-          if (!sessionRemember) writeSessionTokenBestEffort(response.token);
+          if (!sessionRemember) {
+            writeBrowserSessionRecordBestEffort({
+              apiBase: currentApiBase,
+              authMode: 'session',
+              sessionTransport: 'bearer',
+              token: response.token,
+              remember: false,
+            });
+          }
         },
 
         // 登出
         logout: async () => {
           restoreSessionPromise = null;
-          const { authMode, apiBase } = get();
+          const { authMode, apiBase, sessionRemember } = get();
+          const wasBrowserOnlySession = authMode === 'session' && !sessionRemember;
+          // This tab's own browser-only session is ending (by explicit user action, here): the
+          // reset below must not be allowed to rewrite the shared blob at all, since it may still
+          // legitimately hold a completely different (e.g. another tab's remembered) identity.
+          if (wasBrowserOnlySession) {
+            protectSharedBlobOnNextWrite = true;
+          }
 
           // Clear local state FIRST — the caller should see "logged out" immediately rather than
           // waiting on a network round trip. The (best-effort, deduped) server-side logout fires
@@ -524,7 +649,7 @@ export const useAuthStore = create<AuthStoreState>()(
           useConfigStore.getState().clearCache();
           useModelsStore.getState().clearCache();
           useQuotaStore.getState().clearQuotaCache();
-          clearSessionTokenBestEffort();
+          clearBrowserSessionRecordBestEffort();
           set({
             isAuthenticated: false,
             apiBase: '',
@@ -541,7 +666,13 @@ export const useAuthStore = create<AuthStoreState>()(
             sessionStatus: null,
             identityVersion: bumpIdentityVersion(),
           });
-          localStorage.removeItem('isLoggedIn');
+          // Same reasoning as the sign-out branch in restoreSession above: a browser-only
+          // session never set this flag to begin with (see applySessionLogin), so a browser-only
+          // logout has no business clearing it either -- it could only ever belong to a
+          // different, real, remembered key-mode tab.
+          if (!wasBrowserOnlySession) {
+            localStorage.removeItem('isLoggedIn');
+          }
 
           if (authMode === 'session' && apiBase) {
             fireSessionLogoutBestEffort(apiBase);
@@ -601,7 +732,29 @@ export const useAuthStore = create<AuthStoreState>()(
           return data ? JSON.stringify(data) : null;
         },
         setItem: (name, value) => {
-          obfuscatedStorage.setItem(name, JSON.parse(value));
+          const incoming = JSON.parse(value) as { state: Record<string, unknown>; version: number };
+          // Multi-tab safety: zustand persist rewrites the WHOLE shared blob on every single
+          // `set()` (even for something as unrelated as a server-version-update event), so
+          // without this guard a browser-only (remember=false) tab would silently overwrite
+          // another tab's remembered identity (authMode/sessionTransport/managementKey/
+          // sessionRemember/rememberPassword) on its very next unrelated state change. A browser-
+          // only session's identity must never land in the shared blob at all, for its entire
+          // lifecycle including signing out (`protectSharedBlobOnNextWrite`, set by call sites
+          // that transition such a session away to a state that would not otherwise look
+          // browser-only here).
+          const incomingIsBrowserOnlySession =
+            incoming.state.authMode === 'session' && incoming.state.sessionRemember === false;
+          const protectThisWrite = incomingIsBrowserOnlySession || protectSharedBlobOnNextWrite;
+          protectSharedBlobOnNextWrite = false;
+          if (protectThisWrite) {
+            const existing = obfuscatedStorage.getItem<{ state: Record<string, unknown> }>(name);
+            if (existing?.state) {
+              for (const field of PERSISTED_IDENTITY_FIELDS) {
+                incoming.state[field] = existing.state[field];
+              }
+            }
+          }
+          obfuscatedStorage.setItem(name, incoming);
         },
         removeItem: (name) => {
           obfuscatedStorage.removeItem(name);
@@ -612,8 +765,11 @@ export const useAuthStore = create<AuthStoreState>()(
         // Session mode persists its (revocable) token regardless of `rememberPassword`, which
         // only gates the real management key -- UNLESS the session itself is `sessionRemember:
         // false` (the user unchecked "Remember me" at login), in which case the token must never
-        // land in localStorage at all; it lives only in sessionStorage (see
-        // write/read/clearSessionTokenBestEffort above), so it dies with the browser.
+        // land in localStorage at all; it lives only in THIS tab's sessionStorage (see
+        // write/read/clearBrowserSessionRecordBestEffort above), so it dies with the browser. The
+        // `storage.setItem` guard above additionally protects the identity fields below from ever
+        // reaching the shared blob for a browser-only session, regardless of what gets emitted
+        // here.
         ...(state.authMode === 'session'
           ? state.sessionRemember
             ? { managementKey: state.managementKey }
@@ -658,7 +814,15 @@ export function handleSessionRefreshToken(detail: SessionRefreshDetail | null | 
   if (detail.previousToken !== undefined && detail.previousToken !== state.managementKey) return;
   apiClient.setToken(detail.token);
   useAuthStore.setState({ managementKey: detail.token });
-  if (!state.sessionRemember) writeSessionTokenBestEffort(detail.token);
+  if (!state.sessionRemember) {
+    writeBrowserSessionRecordBestEffort({
+      apiBase: state.apiBase,
+      authMode: 'session',
+      sessionTransport: 'bearer',
+      token: detail.token,
+      remember: false,
+    });
+  }
 }
 
 // 监听全局未授权事件

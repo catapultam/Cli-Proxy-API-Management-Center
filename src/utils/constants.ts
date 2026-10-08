@@ -37,10 +37,14 @@ export const STORAGE_KEY_LANGUAGE = 'cli-proxy-language';
 // useAuthStore's `sessionRemember`, which is the actual persisted/applied choice for the current
 // session). Read with a try/catch: localStorage can throw in a private window.
 export const STORAGE_KEY_REMEMBER_ME = 'cpa-remember-me';
-// Session-mode bearer token, held in sessionStorage instead of localStorage when the user
-// unchecked "Remember me": it survives a reload (sessionStorage persists across page reloads
-// within the tab) but not a full browser restart.
-export const STORAGE_KEY_SESSION_TOKEN = 'cpa-session-token';
+// This TAB's browser-only (remember=false) session identity record (apiBase, authMode,
+// sessionTransport, bearer token when applicable), held in sessionStorage instead of
+// localStorage: it survives a reload (sessionStorage persists across page reloads within the
+// same tab) but not a full browser restart, and -- critically -- it is never shared with other
+// tabs/windows, so a browser-only session's identity never has to touch (and risk clobbering)
+// the shared localStorage blob other tabs read. See useAuthStore's
+// write/read/clearBrowserSessionRecordBestEffort and its persist `storage.setItem` guard.
+export const STORAGE_KEY_BROWSER_SESSION = 'cpa-browser-session';
 
 // 语言配置
 export const LANGUAGE_ORDER = defineLanguageOrder(['zh-CN', 'zh-TW', 'en', 'ru'] as const);

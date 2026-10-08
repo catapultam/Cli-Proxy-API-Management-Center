@@ -57,8 +57,13 @@ export interface SessionStatus {
 export interface SessionResponse {
   token: string;
   expires_at: string;
-  /** Additive/informational echo of the remember choice the backend applied; not relied upon by
-   * the panel, which already knows what it asked for. */
+  /**
+   * The remember choice the backend actually applied. Never trust the requested flag alone: an
+   * older proxy that doesn't understand `remember` at all silently issues (and never echoes) a
+   * persistent 30-day session regardless of what was asked, so every call site must compute the
+   * EFFECTIVE remember as `response.remember ?? true` and use that -- not the value it sent in
+   * the request -- to decide `sessionRemember`, cookie/localStorage behavior, etc.
+   */
   remember?: boolean;
 }
 

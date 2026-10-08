@@ -349,7 +349,10 @@ export function LoginPage() {
         credential: credentialJSON,
         remember: rememberMe,
       });
-      await applySessionLogin(baseToUse, response, 'passkey', rememberMe);
+      // applySessionLogin derives the EFFECTIVE remember from `response.remember ?? true` itself
+      // (never trusting the requested `rememberMe` alone -- an older proxy that ignores the
+      // field silently issues a persistent session and never echoes it back).
+      await applySessionLogin(baseToUse, response, 'passkey');
       showNotification(t('common.connected_status'), 'success');
       navigate('/', { replace: true });
     } catch (err: unknown) {

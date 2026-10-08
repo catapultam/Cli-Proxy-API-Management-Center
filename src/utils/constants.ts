@@ -33,6 +33,14 @@ export const MAX_AUTH_FILE_SIZE = 10 * 1024 * 1024;
 export const STORAGE_KEY_AUTH = 'cli-proxy-auth';
 export const STORAGE_KEY_THEME = 'cli-proxy-theme';
 export const STORAGE_KEY_LANGUAGE = 'cli-proxy-language';
+// Last choice of the login page's "Remember me" checkbox (not the session itself -- see
+// useAuthStore's `sessionRemember`, which is the actual persisted/applied choice for the current
+// session). Read with a try/catch: localStorage can throw in a private window.
+export const STORAGE_KEY_REMEMBER_ME = 'cpa-remember-me';
+// Session-mode bearer token, held in sessionStorage instead of localStorage when the user
+// unchecked "Remember me": it survives a reload (sessionStorage persists across page reloads
+// within the tab) but not a full browser restart.
+export const STORAGE_KEY_SESSION_TOKEN = 'cpa-session-token';
 
 // 语言配置
 export const LANGUAGE_ORDER = defineLanguageOrder(['zh-CN', 'zh-TW', 'en', 'ru'] as const);

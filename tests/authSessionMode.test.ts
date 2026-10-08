@@ -2,16 +2,19 @@ import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'b
 import { apiClient } from '@/services/api/client';
 import { guardConfigConnection } from '@/services/api/configValue';
 import { sessionApi } from '@/services/api/session';
+import { obfuscatedStorage } from '@/services/storage/secureStorage';
 import { handleSessionRefreshToken, useAuthStore } from '@/stores/useAuthStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import type { SessionStatus } from '@/types';
 
 const spies: Array<{ mockRestore(): void }> = [];
 const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+const originalSessionStorage = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 const originalLogin = useAuthStore.getState().login;
 const originalFetchConfig = useConfigStore.getState().fetchConfig;
 const memory = new Map<string, string>();
+const sessionMemory = new Map<string, string>();
 
 const AUTHENTICATED_STATUS: SessionStatus = {
   account: true,
@@ -49,6 +52,17 @@ beforeAll(() => {
       removeItem: (key: string) => memory.delete(key),
     },
   });
+  // Stubbed the same way as localStorage above: the store's sessionStorage helpers
+  // (write/read/clearSessionTokenBestEffort) feature-detect via `typeof sessionStorage`, so this
+  // also exercises that they find a real implementation here, same as a browser would provide.
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => sessionMemory.get(key) ?? null,
+      setItem: (key: string, value: string) => sessionMemory.set(key, value),
+      removeItem: (key: string) => sessionMemory.delete(key),
+    },
+  });
   setFakeWindow('https://panel.example');
   logoutNetworkSpy = spyOn(sessionApi, 'logout').mockResolvedValue(undefined as never);
 });
@@ -57,6 +71,9 @@ afterAll(() => {
   logoutNetworkSpy.mockRestore();
   if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
   else Reflect.deleteProperty(globalThis, 'localStorage');
+  if (originalSessionStorage)
+    Object.defineProperty(globalThis, 'sessionStorage', originalSessionStorage);
+  else Reflect.deleteProperty(globalThis, 'sessionStorage');
   if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
   else Reflect.deleteProperty(globalThis, 'window');
 });
@@ -68,6 +85,7 @@ afterEach(async () => {
   useAuthStore.setState({ login: originalLogin });
   useConfigStore.setState({ fetchConfig: originalFetchConfig });
   memory.clear();
+  sessionMemory.clear();
   logoutNetworkSpy.mockClear();
   await useAuthStore.getState().logout();
   useAuthStore.setState({
@@ -92,7 +110,7 @@ describe('applySessionLogin transport selection', () => {
 
     await useAuthStore
       .getState()
-      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password', true);
 
     const state = useAuthStore.getState();
     expect(state.sessionTransport).toBe('cookie');
@@ -108,7 +126,7 @@ describe('applySessionLogin transport selection', () => {
 
     await useAuthStore
       .getState()
-      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password', true);
 
     const state = useAuthStore.getState();
     expect(state.sessionTransport).toBe('bearer');
@@ -122,7 +140,7 @@ describe('applySessionLogin transport selection', () => {
 
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'passkey');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'passkey', true);
 
     const state = useAuthStore.getState();
     expect(state.sessionTransport).toBe('bearer');
@@ -138,7 +156,7 @@ describe('applySessionLogin transport selection', () => {
 
     await useAuthStore
       .getState()
-      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password', true);
 
     expect(useAuthStore.getState().rememberPassword).toBe(false);
   });
@@ -149,7 +167,7 @@ describe('adoptRotatedToken (S2: same-identity token rotation)', () => {
     setFakeWindow('https://panel.example');
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
     const clearCacheSpy = spyOn(useConfigStore.getState(), 'clearCache');
     spies.push(clearCacheSpy);
     const versionBefore = useAuthStore.getState().identityVersion;
@@ -169,7 +187,7 @@ describe('adoptRotatedToken (S2: same-identity token rotation)', () => {
     spies.push(spyOn(sessionApi, 'getStatus').mockResolvedValue(AUTHENTICATED_STATUS));
     await useAuthStore
       .getState()
-      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password', true);
 
     useAuthStore.getState().adoptRotatedToken('https://panel.example', {
       token: 'cpas_should-be-ignored',
@@ -185,7 +203,7 @@ describe('X-CPA-Session-Refresh handling', () => {
     setFakeWindow('https://panel.example');
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
     expect(useAuthStore.getState().sessionTransport).toBe('bearer');
 
     handleSessionRefreshToken({
@@ -201,7 +219,7 @@ describe('X-CPA-Session-Refresh handling', () => {
     setFakeWindow('https://panel.example');
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
 
     // A second, more recent refresh already landed...
     handleSessionRefreshToken({
@@ -226,7 +244,7 @@ describe('X-CPA-Session-Refresh handling', () => {
     setFakeWindow('https://panel.example');
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
 
     handleSessionRefreshToken({
       token: 'cpas_from-another-server',
@@ -242,7 +260,7 @@ describe('X-CPA-Session-Refresh handling', () => {
     spies.push(spyOn(sessionApi, 'getStatus').mockResolvedValue(AUTHENTICATED_STATUS));
     await useAuthStore
       .getState()
-      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://panel.example', SESSION_RESPONSE, 'password', true);
     expect(useAuthStore.getState().sessionTransport).toBe('cookie');
 
     handleSessionRefreshToken({ token: 'cpas_should-be-ignored' });
@@ -266,7 +284,7 @@ describe('X-CPA-Session-Refresh handling', () => {
     setFakeWindow('https://panel.example');
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
 
     handleSessionRefreshToken(undefined);
     handleSessionRefreshToken({ token: '' });
@@ -548,7 +566,7 @@ describe('identityVersion', () => {
 
     await useAuthStore
       .getState()
-      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password');
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
     const v2 = useAuthStore.getState().identityVersion;
     expect(v2).toBeGreaterThan(v1);
 
@@ -615,5 +633,140 @@ describe('apiClient.setToken / guardConfigConnection (session-refresh mid-reques
     });
 
     expect(() => assertConnection()).not.toThrow();
+  });
+});
+
+describe('remember me', () => {
+  test('login() sends remember=true in the request body by default-checked flow', async () => {
+    // Cross-origin from the fake window on purpose: applySessionLogin then picks bearer transport
+    // directly, with no follow-up session/status network probe to stub.
+    setFakeWindow('https://panel.example');
+    const loginSpy = spyOn(sessionApi, 'login').mockResolvedValue(SESSION_RESPONSE);
+    spies.push(loginSpy);
+
+    await useAuthStore.getState().loginWithPassword({
+      apiBase: 'https://api.other-origin.example',
+      username: 'admin',
+      password: 'correct-horse-battery-staple',
+      remember: true,
+    });
+
+    expect(loginSpy).toHaveBeenCalledWith('https://api.other-origin.example', {
+      username: 'admin',
+      password: 'correct-horse-battery-staple',
+      remember: true,
+    });
+  });
+
+  test('login() sends remember=false when the caller unchecked it', async () => {
+    setFakeWindow('https://panel.example');
+    const loginSpy = spyOn(sessionApi, 'login').mockResolvedValue(SESSION_RESPONSE);
+    spies.push(loginSpy);
+
+    await useAuthStore.getState().loginWithPassword({
+      apiBase: 'https://api.other-origin.example',
+      username: 'admin',
+      password: 'correct-horse-battery-staple',
+      remember: false,
+    });
+
+    expect(loginSpy).toHaveBeenCalledWith('https://api.other-origin.example', {
+      username: 'admin',
+      password: 'correct-horse-battery-staple',
+      remember: false,
+    });
+  });
+
+  test('remember=true (unchanged): the bearer token is persisted to localStorage and nothing is written to sessionStorage', async () => {
+    setFakeWindow('https://panel.example');
+    await useAuthStore
+      .getState()
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', true);
+
+    expect(useAuthStore.getState().sessionRemember).toBe(true);
+    expect(useAuthStore.getState().managementKey).toBe(SESSION_RESPONSE.token);
+
+    // zustand's persist middleware writes to storage synchronously on every `set()`; inspect
+    // what actually landed in the (stubbed, obfuscated) localStorage. zustand wraps the
+    // partialized state in a `{ state, version }` envelope.
+    expect(memory.get('cli-proxy-auth')).toBeTruthy();
+    const persisted = obfuscatedStorage.getItem<{ state: { managementKey?: string } }>(
+      'cli-proxy-auth'
+    );
+    expect(persisted?.state.managementKey).toBe(SESSION_RESPONSE.token);
+    expect(sessionMemory.get('cpa-session-token')).toBeUndefined();
+  });
+
+  test('remember=false: the bearer token is kept out of the persisted localStorage blob and lives in sessionStorage instead', async () => {
+    setFakeWindow('https://panel.example');
+    await useAuthStore
+      .getState()
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', false);
+
+    const state = useAuthStore.getState();
+    expect(state.sessionRemember).toBe(false);
+    expect(state.managementKey).toBe(SESSION_RESPONSE.token); // still usable in-memory this tab.
+    expect(sessionMemory.get('cpa-session-token')).toBe(SESSION_RESPONSE.token);
+
+    // The persisted blob must NOT contain the token.
+    expect(memory.get('cli-proxy-auth')).toBeTruthy();
+    const persisted = obfuscatedStorage.getItem<{ state: { managementKey?: string } }>(
+      'cli-proxy-auth'
+    );
+    expect(persisted?.state.managementKey).toBeUndefined();
+  });
+
+  test('remember=false: restoreSession recovers the bearer token from sessionStorage after a simulated reload', async () => {
+    // Cross-origin on purpose (see the first two tests in this describe block): this test is
+    // about the bearer-token recovery path in restoreSession, not cookie-vs-bearer selection, so
+    // avoid the same-origin cookie-verify probe applySessionLogin would otherwise fire here.
+    setFakeWindow('https://panel.example');
+    await useAuthStore
+      .getState()
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', false);
+    expect(sessionMemory.get('cpa-session-token')).toBe(SESSION_RESPONSE.token);
+
+    // Simulate a fresh page load: managementKey wiped (as it would be after rehydrating from
+    // localStorage, which never had it), but the other session-identifying fields survive.
+    useAuthStore.setState({ managementKey: '' });
+    const getStatusSpy = spyOn(sessionApi, 'getStatus').mockResolvedValue(AUTHENTICATED_STATUS);
+    spies.push(getStatusSpy);
+
+    const result = await useAuthStore.getState().restoreSession();
+
+    expect(result).toBe(true);
+    expect(getStatusSpy.mock.calls[0]).toContain(SESSION_RESPONSE.token);
+    expect(useAuthStore.getState().managementKey).toBe(SESSION_RESPONSE.token);
+    expect(useAuthStore.getState().sessionTransport).toBe('bearer');
+  });
+
+  test('logout() clears the sessionStorage token', async () => {
+    setFakeWindow('https://panel.example');
+    await useAuthStore
+      .getState()
+      .applySessionLogin('https://api.other-origin.example', SESSION_RESPONSE, 'password', false);
+    expect(sessionMemory.get('cpa-session-token')).toBe(SESSION_RESPONSE.token);
+
+    await useAuthStore.getState().logout();
+
+    expect(sessionMemory.get('cpa-session-token')).toBeUndefined();
+    expect(useAuthStore.getState().sessionRemember).toBe(true); // reset to the default.
+  });
+
+  test("restoreSession's definitive authenticated:false branch clears the sessionStorage token too", async () => {
+    setFakeWindow('https://panel.example');
+    useAuthStore.setState({
+      apiBase: 'https://panel.example',
+      managementKey: '',
+      authMode: 'session',
+      sessionTransport: 'bearer',
+      sessionRemember: false,
+    });
+    sessionMemory.set('cpa-session-token', 'cpas_stale-browser-session-token');
+    spies.push(spyOn(sessionApi, 'getStatus').mockResolvedValue(UNAUTHENTICATED_STATUS));
+
+    await useAuthStore.getState().restoreSession();
+
+    expect(sessionMemory.get('cpa-session-token')).toBeUndefined();
   });
 });

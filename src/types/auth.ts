@@ -30,6 +30,13 @@ export interface AuthState {
   authMode: AuthMode;
   sessionTransport: SessionTransport;
   loginMethod: SessionLoginMethod;
+  /**
+   * The "Remember me" choice behind the CURRENT session-mode login (password/passkey), as opposed
+   * to `rememberPassword`, which only ever applies to the management-key flow. When false, the
+   * session is a short-lived browser session: the bearer token is kept in sessionStorage instead
+   * of being persisted to localStorage. Irrelevant in key mode.
+   */
+  sessionRemember: boolean;
 }
 
 // 连接状态
@@ -50,6 +57,9 @@ export interface SessionStatus {
 export interface SessionResponse {
   token: string;
   expires_at: string;
+  /** Additive/informational echo of the remember choice the backend applied; not relied upon by
+   * the panel, which already knows what it asked for. */
+  remember?: boolean;
 }
 
 export interface AccountPasskey {

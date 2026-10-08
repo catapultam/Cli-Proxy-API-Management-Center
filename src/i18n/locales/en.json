@@ -98,6 +98,7 @@
     "username_placeholder": "Enter your username",
     "password_label": "Password",
     "password_placeholder": "Enter your password",
+    "remember_me_label": "Remember me",
     "passkey_button": "Sign in with passkey",
     "passkey_https_link": "Sign in with passkey (opens the HTTPS address)",
     "use_key_instead": "Use management key instead",

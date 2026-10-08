@@ -52,14 +52,18 @@ export const sessionApi = {
   getStatus: (apiBase: string, bearerToken?: string) =>
     sessionRequest<SessionStatus>('get', apiBase, '/status', { bearerToken }),
 
-  login: (apiBase: string, credentials: { username: string; password: string }) =>
-    sessionRequest<SessionResponse>('post', apiBase, '/login', { data: credentials }),
+  login: (
+    apiBase: string,
+    credentials: { username: string; password: string; remember?: boolean }
+  ) => sessionRequest<SessionResponse>('post', apiBase, '/login', { data: credentials }),
 
   passkeyBegin: (apiBase: string) =>
     sessionRequest<PasskeyCeremonyBegin>('post', apiBase, '/passkey/begin'),
 
-  passkeyFinish: (apiBase: string, payload: { ceremony_id: string; credential: unknown }) =>
-    sessionRequest<SessionResponse>('post', apiBase, '/passkey/finish', { data: payload }),
+  passkeyFinish: (
+    apiBase: string,
+    payload: { ceremony_id: string; credential: unknown; remember?: boolean }
+  ) => sessionRequest<SessionResponse>('post', apiBase, '/passkey/finish', { data: payload }),
 
   logout: (apiBase: string) => sessionRequest<void>('post', apiBase, '/logout'),
 };

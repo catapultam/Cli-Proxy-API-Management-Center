@@ -143,8 +143,13 @@ export function AccountPage() {
         adoptRotatedToken(apiBase, response);
       } else {
         // A genuine transition into session mode (first-time setup, or a key-mode admin resetting
-        // an existing account's password) — this IS a real new session.
-        await applySessionLogin(apiBase, response, 'password');
+        // an existing account's password) — this IS a real new session. There is no "Remember
+        // me" checkbox on this page, so trust the backend's echoed `remember` (it already applied
+        // the right default: true for a key-authenticated caller, or the prior session's own
+        // choice when this was itself issued over a session -- see resolvedSessionRemember
+        // server-side); fall back to true, matching today's unconditional behavior, if an older
+        // backend omits the field.
+        await applySessionLogin(apiBase, response, 'password', response.remember ?? true);
       }
       setAccount((prev) =>
         prev ? { ...prev, configured: true, username: trimmedUsername } : prev

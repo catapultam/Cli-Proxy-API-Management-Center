@@ -16,7 +16,7 @@ import {
   supportsPasskeys,
 } from '@/services/passkey';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
-import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
+import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER, STORAGE_KEY_REMEMBER_ME } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import type { ApiError, SessionStatus } from '@/types';
@@ -25,6 +25,28 @@ import styles from './LoginPage.module.scss';
 
 /** Session bearer tokens always start with this prefix; a real management key never does. */
 const isSessionToken = (value: string): boolean => value.startsWith('cpas_');
+
+/**
+ * Reads the login page's last "Remember me" choice. Defaults to `true` (checked) when nothing
+ * was stored yet, or when localStorage throws (private window, blocked site data, etc).
+ */
+function readRememberMeChoice(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_REMEMBER_ME);
+    if (raw === null) return true;
+    return raw === 'true';
+  } catch {
+    return true;
+  }
+}
+
+function writeRememberMeChoice(remember: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_REMEMBER_ME, remember ? 'true' : 'false');
+  } catch {
+    // Best-effort: just won't be remembered as the default for next time.
+  }
+}
 
 /**
  * `passkey_origins` is the backend's already-effective list (it defaults to
@@ -145,6 +167,7 @@ export function LoginPage() {
   const [showKey, setShowKey] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberPassword, setRememberPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => readRememberMeChoice());
   const [useKeyForm, setUseKeyForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
@@ -173,6 +196,10 @@ export function LoginPage() {
     },
     [setLanguage]
   );
+  const handleRememberMeChange = useCallback((value: boolean) => {
+    setRememberMe(value);
+    writeRememberMeChoice(value);
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -271,7 +298,12 @@ export function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      await loginWithPassword({ apiBase: baseToUse, username: username.trim(), password });
+      await loginWithPassword({
+        apiBase: baseToUse,
+        username: username.trim(),
+        password,
+        remember: rememberMe,
+      });
       showNotification(t('common.connected_status'), 'success');
       navigate('/', { replace: true });
     } catch (err: unknown) {
@@ -294,6 +326,7 @@ export function LoginPage() {
     loginWithPassword,
     navigate,
     password,
+    rememberMe,
     showNotification,
     startRetryCountdown,
     t,
@@ -314,8 +347,9 @@ export function LoginPage() {
       const response = await sessionApi.passkeyFinish(baseToUse, {
         ceremony_id: begin.ceremony_id,
         credential: credentialJSON,
+        remember: rememberMe,
       });
-      await applySessionLogin(baseToUse, response, 'passkey');
+      await applySessionLogin(baseToUse, response, 'passkey', rememberMe);
       showNotification(t('common.connected_status'), 'success');
       navigate('/', { replace: true });
     } catch (err: unknown) {
@@ -339,7 +373,7 @@ export function LoginPage() {
     } finally {
       setPasskeyLoading(false);
     }
-  }, [applySessionLogin, baseToUse, navigate, showNotification, t]);
+  }, [applySessionLogin, baseToUse, navigate, rememberMe, showNotification, t]);
 
   const handleKeySubmit = useCallback(async () => {
     if (!managementKey.trim()) {
@@ -485,6 +519,16 @@ export function LoginPage() {
                       </button>
                     }
                   />
+
+                  <div className={styles.toggleAdvanced}>
+                    <SelectionCheckbox
+                      checked={rememberMe}
+                      onChange={handleRememberMeChange}
+                      ariaLabel={t('login.remember_me_label')}
+                      label={t('login.remember_me_label')}
+                      labelClassName={styles.toggleLabel}
+                    />
+                  </div>
 
                   {retryAfter > 0 && (
                     <div className={styles.errorBox}>

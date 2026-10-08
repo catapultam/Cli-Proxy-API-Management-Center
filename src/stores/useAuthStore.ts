@@ -14,7 +14,7 @@ import type {
   SessionStatus,
   SessionLoginMethod,
 } from '@/types';
-import { STORAGE_KEY_AUTH } from '@/utils/constants';
+import { STORAGE_KEY_AUTH, STORAGE_KEY_SESSION_TOKEN } from '@/utils/constants';
 import { obfuscatedStorage } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
 import { sessionApi } from '@/services/api/session';
@@ -55,11 +55,13 @@ interface AuthStoreState extends AuthState {
     apiBase: string;
     username: string;
     password: string;
+    remember: boolean;
   }) => Promise<void>;
   applySessionLogin: (
     apiBase: string,
     response: SessionResponse,
-    method: SessionLoginMethod
+    method: SessionLoginMethod,
+    remember: boolean
   ) => Promise<void>;
   /**
    * Adopts a fresh token for the SAME already-logged-in identity (e.g. a password change rotates
@@ -142,6 +144,44 @@ async function fetchSessionStatusSafely(
   return probe.kind === 'ok' ? probe.status : null;
 }
 
+/**
+ * sessionStorage-backed home for the bearer token of a `sessionRemember: false` session: it
+ * survives a reload (sessionStorage outlives a navigation within the same tab) but not a full
+ * browser restart, unlike localStorage. Every access is wrapped in try/catch: `sessionStorage`
+ * does not exist at all under the bun test runner (no DOM), and real browsers can throw on access
+ * in a private window or when site data is blocked.
+ */
+function writeSessionTokenBestEffort(token: string): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    if (!token) {
+      sessionStorage.removeItem(STORAGE_KEY_SESSION_TOKEN);
+      return;
+    }
+    sessionStorage.setItem(STORAGE_KEY_SESSION_TOKEN, token);
+  } catch {
+    // Best-effort: a non-remembered session just won't survive a reload in this environment.
+  }
+}
+
+function readSessionTokenBestEffort(): string {
+  try {
+    if (typeof sessionStorage === 'undefined') return '';
+    return sessionStorage.getItem(STORAGE_KEY_SESSION_TOKEN) || '';
+  } catch {
+    return '';
+  }
+}
+
+function clearSessionTokenBestEffort(): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.removeItem(STORAGE_KEY_SESSION_TOKEN);
+  } catch {
+    // Nothing to recover from here either.
+  }
+}
+
 export const useAuthStore = create<AuthStoreState>()(
   persist(
     (set, get) => {
@@ -165,6 +205,7 @@ export const useAuthStore = create<AuthStoreState>()(
         authMode: 'key',
         sessionTransport: 'bearer',
         loginMethod: '',
+        sessionRemember: true,
         sessionStatus: null,
         sessionStatusError: false,
         sessionRoutesSupported: true,
@@ -183,7 +224,14 @@ export const useAuthStore = create<AuthStoreState>()(
               obfuscatedStorage.getItem<string>('apiUrl', { encrypt: true });
             const legacyKey = obfuscatedStorage.getItem<string>('managementKey');
 
-            const { apiBase, managementKey, rememberPassword, authMode, sessionTransport } = get();
+            const {
+              apiBase,
+              managementKey,
+              rememberPassword,
+              authMode,
+              sessionTransport,
+              sessionRemember,
+            } = get();
             const resolvedBase = normalizeApiBase(
               apiBase || legacyBase || detectApiBaseFromLocation()
             );
@@ -191,9 +239,14 @@ export const useAuthStore = create<AuthStoreState>()(
             // Check the new session-based login first: an authenticated cookie or a remembered
             // bearer-session token means we can log straight in with no prompt at all.
             const previousAuthMode = authMode;
+            // A `sessionRemember: false` bearer token is deliberately excluded from the persisted
+            // store (see `partialize` below), so after a reload `managementKey` here is empty for
+            // that case; fall back to the sessionStorage copy written alongside it.
             const bearerToken =
               previousAuthMode === 'session' && sessionTransport === 'bearer'
-                ? managementKey
+                ? managementKey ||
+                  (!sessionRemember ? readSessionTokenBestEffort() : '') ||
+                  undefined
                 : undefined;
             const probe = await probeSessionStatus(resolvedBase, bearerToken);
             set({ apiBase: resolvedBase });
@@ -229,6 +282,11 @@ export const useAuthStore = create<AuthStoreState>()(
                   bearerToken || !isCookieEligible(resolvedBase) ? 'bearer' : 'cookie';
                 const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
                 apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
+                if (transport === 'bearer' && !sessionRemember) {
+                  // Re-write it: on a reload this just restates what's already in sessionStorage,
+                  // but after `adoptRotatedToken`/a sliding refresh this keeps the two in sync.
+                  writeSessionTokenBestEffort(tokenForClient);
+                }
                 set({
                   isAuthenticated: true,
                   apiBase: resolvedBase,
@@ -251,12 +309,14 @@ export const useAuthStore = create<AuthStoreState>()(
                 // authenticated request, which this status check never made.
                 clearStaleCookieBestEffort(resolvedBase);
                 apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
+                clearSessionTokenBestEffort();
                 set({
                   isAuthenticated: false,
                   managementKey: '',
                   authMode: 'key',
                   sessionTransport: 'bearer',
                   loginMethod: '',
+                  sessionRemember: true,
                   connectionStatus: 'disconnected',
                   identityVersion: bumpIdentityVersion(),
                 });
@@ -382,12 +442,16 @@ export const useAuthStore = create<AuthStoreState>()(
         },
 
         // 用户名 + 密码登录（会话模式）
-        loginWithPassword: async ({ apiBase, username, password }) => {
+        loginWithPassword: async ({ apiBase, username, password, remember }) => {
           const normalizedBase = normalizeApiBase(apiBase);
           set({ connectionStatus: 'connecting' });
           try {
-            const response = await sessionApi.login(normalizedBase, { username, password });
-            await get().applySessionLogin(normalizedBase, response, 'password');
+            const response = await sessionApi.login(normalizedBase, {
+              username,
+              password,
+              remember,
+            });
+            await get().applySessionLogin(normalizedBase, response, 'password', remember);
           } catch (error) {
             set({ connectionStatus: 'error' });
             throw error;
@@ -395,7 +459,7 @@ export const useAuthStore = create<AuthStoreState>()(
         },
 
         // 由密码或 passkey 登录成功后，统一落地会话状态（选择 cookie / bearer 传输方式）
-        applySessionLogin: async (apiBase, response, method) => {
+        applySessionLogin: async (apiBase, response, method, remember) => {
           const normalizedBase = normalizeApiBase(apiBase);
           let transport: SessionTransport = isCookieEligible(normalizedBase) ? 'cookie' : 'bearer';
 
@@ -416,6 +480,12 @@ export const useAuthStore = create<AuthStoreState>()(
           useQuotaStore.getState().clearQuotaCache();
 
           apiClient.setConfig({ apiBase: normalizedBase, managementKey: tokenForClient });
+          if (transport === 'bearer' && !remember) {
+            writeSessionTokenBestEffort(tokenForClient);
+          } else {
+            // Defensive: clear any leftover token from a previous remember=false login/identity.
+            clearSessionTokenBestEffort();
+          }
           set({
             isAuthenticated: true,
             apiBase: normalizedBase,
@@ -423,6 +493,7 @@ export const useAuthStore = create<AuthStoreState>()(
             authMode: 'session',
             sessionTransport: transport,
             loginMethod: method,
+            sessionRemember: remember,
             connectionStatus: 'connected',
             identityVersion: bumpIdentityVersion(),
           });
@@ -430,7 +501,7 @@ export const useAuthStore = create<AuthStoreState>()(
         },
 
         adoptRotatedToken: (apiBase, response) => {
-          const { sessionTransport, apiBase: currentApiBase } = get();
+          const { sessionTransport, apiBase: currentApiBase, sessionRemember } = get();
           // Cookie mode: the browser already applied the rotated token via Set-Cookie on the
           // response that carried it. Nothing for the client to do.
           if (sessionTransport !== 'bearer') return;
@@ -438,6 +509,7 @@ export const useAuthStore = create<AuthStoreState>()(
           if (normalizedBase !== currentApiBase) return; // defensive: never adopt across a switch.
           apiClient.setToken(response.token);
           set({ managementKey: response.token });
+          if (!sessionRemember) writeSessionTokenBestEffort(response.token);
         },
 
         // 登出
@@ -452,6 +524,7 @@ export const useAuthStore = create<AuthStoreState>()(
           useConfigStore.getState().clearCache();
           useModelsStore.getState().clearCache();
           useQuotaStore.getState().clearQuotaCache();
+          clearSessionTokenBestEffort();
           set({
             isAuthenticated: false,
             apiBase: '',
@@ -464,6 +537,7 @@ export const useAuthStore = create<AuthStoreState>()(
             authMode: 'key',
             sessionTransport: 'bearer',
             loginMethod: '',
+            sessionRemember: true,
             sessionStatus: null,
             identityVersion: bumpIdentityVersion(),
           });
@@ -535,14 +609,20 @@ export const useAuthStore = create<AuthStoreState>()(
       })),
       partialize: (state) => ({
         apiBase: state.apiBase,
-        // Session mode persists its (revocable, 30-day) token regardless of `rememberPassword`,
-        // which only gates the real management key. Without this split, forcing session logins to
-        // flip `rememberPassword` just to survive a reload would also silently "remember" a key
-        // the user never asked to remember.
-        ...(state.authMode === 'session' || state.rememberPassword
-          ? { managementKey: state.managementKey }
-          : {}),
+        // Session mode persists its (revocable) token regardless of `rememberPassword`, which
+        // only gates the real management key -- UNLESS the session itself is `sessionRemember:
+        // false` (the user unchecked "Remember me" at login), in which case the token must never
+        // land in localStorage at all; it lives only in sessionStorage (see
+        // write/read/clearSessionTokenBestEffort above), so it dies with the browser.
+        ...(state.authMode === 'session'
+          ? state.sessionRemember
+            ? { managementKey: state.managementKey }
+            : {}
+          : state.rememberPassword
+            ? { managementKey: state.managementKey }
+            : {}),
         rememberPassword: state.rememberPassword,
+        sessionRemember: state.sessionRemember,
         serverVersion: state.serverVersion,
         serverBuildDate: state.serverBuildDate,
         authMode: state.authMode,
@@ -578,6 +658,7 @@ export function handleSessionRefreshToken(detail: SessionRefreshDetail | null | 
   if (detail.previousToken !== undefined && detail.previousToken !== state.managementKey) return;
   apiClient.setToken(detail.token);
   useAuthStore.setState({ managementKey: detail.token });
+  if (!state.sessionRemember) writeSessionTokenBestEffort(detail.token);
 }
 
 // 监听全局未授权事件

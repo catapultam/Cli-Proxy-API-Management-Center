@@ -98,6 +98,7 @@
     "username_placeholder": "请输入用户名",
     "password_label": "密码",
     "password_placeholder": "请输入密码",
+    "remember_me_label": "记住我",
     "passkey_button": "使用通行密钥登录",
     "passkey_https_link": "使用通行密钥登录（打开 HTTPS 地址）",
     "use_key_instead": "改用管理密钥登录",

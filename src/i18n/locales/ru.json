@@ -98,6 +98,7 @@
     "username_placeholder": "Введите имя пользователя",
     "password_label": "Пароль",
     "password_placeholder": "Введите пароль",
+    "remember_me_label": "Запомнить меня",
     "passkey_button": "Войти с помощью passkey",
     "passkey_https_link": "Войти с помощью passkey (откроется HTTPS-адрес)",
     "use_key_instead": "Использовать ключ управления вместо этого",

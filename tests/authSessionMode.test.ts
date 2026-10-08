@@ -351,6 +351,33 @@ describe('restoreSession', () => {
     expect(loginSpy).not.toHaveBeenCalled();
   });
 
+  test('keeps a remembered bearer session on a same-origin base instead of switching to cookie', async () => {
+    // applySessionLogin falls back to bearer on a same-origin base when the cookie did not stick
+    // (e.g. a Secure cookie from the HTTPS origin shadows it on the HTTP one). The probe then
+    // authenticates via that bearer, so dropping it for cookie mode leaves every request with no
+    // credential: 401 -> logout on every reload.
+    setFakeWindow('https://panel.example');
+    useAuthStore.setState({
+      apiBase: 'https://panel.example',
+      managementKey: 'cpas_remembered-token',
+      authMode: 'session',
+      sessionTransport: 'bearer',
+    });
+    const getStatusSpy = spyOn(sessionApi, 'getStatus').mockResolvedValue(AUTHENTICATED_STATUS);
+    spies.push(getStatusSpy);
+
+    const result = await useAuthStore.getState().restoreSession();
+
+    expect(result).toBe(true);
+    expect(getStatusSpy.mock.calls[0]).toContain('cpas_remembered-token');
+    expect(useAuthStore.getState().sessionTransport).toBe('bearer');
+    expect(useAuthStore.getState().managementKey).toBe('cpas_remembered-token');
+    // The client must actually send it.
+    expect((apiClient as unknown as { managementKey: string }).managementKey).toBe(
+      'cpas_remembered-token'
+    );
+  });
+
   test('old-backend 404 on session/status falls back to the unchanged remembered-key flow', async () => {
     localStorage.setItem('isLoggedIn', 'true');
     useAuthStore.setState({

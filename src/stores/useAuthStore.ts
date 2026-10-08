@@ -222,9 +222,11 @@ export const useAuthStore = create<AuthStoreState>()(
               });
 
               if (probe.kind === 'ok' && probe.status.authenticated) {
-                const transport: SessionTransport = isCookieEligible(resolvedBase)
-                  ? 'cookie'
-                  : 'bearer';
+                // A remembered bearer that just authenticated stays bearer: login only picks
+                // bearer on a same-origin base when the cookie did not stick, so switching to
+                // cookie here would send no credential at all.
+                const transport: SessionTransport =
+                  bearerToken || !isCookieEligible(resolvedBase) ? 'bearer' : 'cookie';
                 const tokenForClient = transport === 'bearer' ? bearerToken || '' : '';
                 apiClient.setConfig({ apiBase: resolvedBase, managementKey: tokenForClient });
                 set({

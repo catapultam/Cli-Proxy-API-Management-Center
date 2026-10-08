@@ -99,6 +99,7 @@
     "password_label": "Пароль",
     "password_placeholder": "Введите пароль",
     "passkey_button": "Войти с помощью passkey",
+    "passkey_https_link": "Войти с помощью passkey (откроется HTTPS-адрес)",
     "use_key_instead": "Использовать ключ управления вместо этого",
     "use_account_instead": "Использовать имя пользователя и пароль вместо этого",
     "retry_after_message": "Слишком много попыток. Повторите через {{seconds}} с",

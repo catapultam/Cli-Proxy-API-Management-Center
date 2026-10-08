@@ -9,7 +9,12 @@ import { Collapsible } from '@/components/ui/Collapsible';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
 import { sessionApi } from '@/services/api/session';
-import { assertionOptionsFromJSON, credentialToJSON, supportsPasskeys } from '@/services/passkey';
+import {
+  assertionOptionsFromJSON,
+  credentialToJSON,
+  httpsPasskeyOriginForHttpPage,
+  supportsPasskeys,
+} from '@/services/passkey';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -250,6 +255,13 @@ export function LoginPage() {
     supportsPasskeys() &&
     typeof window !== 'undefined' &&
     effectivePasskeyOrigins(sessionStatus).includes(window.location.origin);
+  const httpsPasskeyOrigin = showAccountForm
+    ? httpsPasskeyOriginForHttpPage(
+        effectivePasskeyOrigins(sessionStatus),
+        Boolean(sessionStatus?.passkeys_available),
+        window.location
+      )
+    : null;
 
   const handlePasswordSubmit = useCallback(async () => {
     if (!username.trim() || !password) {
@@ -499,6 +511,15 @@ export function LoginPage() {
                     >
                       {t('login.passkey_button')}
                     </Button>
+                  )}
+
+                  {!showPasskeyButton && httpsPasskeyOrigin && (
+                    <a
+                      className="btn btn-secondary btn-full"
+                      href={`${httpsPasskeyOrigin}${window.location.pathname}${window.location.hash}`}
+                    >
+                      {t('login.passkey_https_link')}
+                    </a>
                   )}
 
                   {error && <div className={styles.errorBox}>{error}</div>}

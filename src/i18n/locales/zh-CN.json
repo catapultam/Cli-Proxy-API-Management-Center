@@ -99,6 +99,7 @@
     "password_label": "密码",
     "password_placeholder": "请输入密码",
     "passkey_button": "使用通行密钥登录",
+    "passkey_https_link": "使用通行密钥登录（打开 HTTPS 地址）",
     "use_key_instead": "改用管理密钥登录",
     "use_account_instead": "改用用户名和密码登录",
     "retry_after_message": "尝试次数过多，请在 {{seconds}} 秒后重试",

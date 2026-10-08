@@ -99,6 +99,7 @@
     "password_label": "密碼",
     "password_placeholder": "請輸入密碼",
     "passkey_button": "使用通行金鑰登入",
+    "passkey_https_link": "使用通行金鑰登入（開啟 HTTPS 位址）",
     "use_key_instead": "改用管理金鑰登入",
     "use_account_instead": "改用使用者名稱和密碼登入",
     "retry_after_message": "嘗試次數過多，請在 {{seconds}} 秒後重試",

@@ -43,6 +43,28 @@ export function supportsPasskeys(): boolean {
 }
 
 /** Best-effort default name for the "add a passkey" prompt, guessed from the UA string. */
+/**
+ * Passkeys never work over plain HTTP. When the page is HTTP and an HTTPS passkey origin exists
+ * for the same host, return it so the login form can link there instead of hiding passkeys.
+ */
+export function httpsPasskeyOriginForHttpPage(
+  origins: string[],
+  passkeysAvailable: boolean,
+  location: Pick<Location, 'protocol' | 'hostname'>
+): string | null {
+  if (!passkeysAvailable || location.protocol !== 'http:') return null;
+  return (
+    origins.find((origin) => {
+      try {
+        const url = new URL(origin);
+        return url.protocol === 'https:' && url.hostname === location.hostname;
+      } catch {
+        return false;
+      }
+    }) ?? null
+  );
+}
+
 export function guessDeviceName(userAgent: string): string {
   const ua = userAgent || '';
   if (/iPhone/i.test(ua)) return 'iPhone';

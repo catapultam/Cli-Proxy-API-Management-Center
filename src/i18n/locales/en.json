@@ -99,6 +99,7 @@
     "password_label": "Password",
     "password_placeholder": "Enter your password",
     "passkey_button": "Sign in with passkey",
+    "passkey_https_link": "Sign in with passkey (opens the HTTPS address)",
     "use_key_instead": "Use management key instead",
     "use_account_instead": "Use username and password instead",
     "retry_after_message": "Too many attempts. Try again in {{seconds}}s",

@@ -23,6 +23,7 @@ import { IconX } from '@/components/ui/icons';
 import {
   IconSidebarAuthFiles,
   IconSidebarConfig,
+  IconModelCluster,
   IconSidebarDashboard,
   IconSidebarLogs,
   IconSidebarOauth,
@@ -60,6 +61,7 @@ const sidebarIcons: Record<string, ReactNode> = {
   aiProviders: <IconSidebarProviders size={18} />,
   authFiles: <IconSidebarAuthFiles size={18} />,
   oauth: <IconSidebarOauth size={18} />,
+  gatewayModels: <IconModelCluster size={18} />,
   quota: <IconSidebarQuota size={18} />,
   plugins: <IconSidebarPlugins size={18} />,
   pluginStore: <IconSidebarStore size={18} />,
@@ -662,6 +664,12 @@ export function MainLayout() {
           labelKey: 'nav.oauth',
           metaKey: 'nav_meta.oauth',
           icon: sidebarIcons.oauth,
+        },
+        {
+          path: '/gateway-models',
+          labelKey: 'nav.gateway_models',
+          metaKey: 'nav_meta.gateway_models',
+          icon: sidebarIcons.gatewayModels,
         },
       ],
     },

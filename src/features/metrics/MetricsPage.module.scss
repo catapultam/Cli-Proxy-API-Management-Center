@@ -1,0 +1,59 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+  width: 100%;
+  min-width: 0;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: $spacing-md $spacing-lg;
+}
+
+.headerCopy {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.description {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.frameWrap {
+  position: relative;
+  min-width: 0;
+}
+
+// Fill the visible viewport below the page header; keep a usable floor on short screens.
+.viewport {
+  display: block;
+  width: 100%;
+  height: max(480px, calc(100dvh - 220px));
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+  background: var(--bg-secondary);
+}
+
+.frameSkeleton {
+  position: absolute;
+  inset: 0;
+}

@@ -12,6 +12,7 @@ import { PluginStorePage } from '@/features/plugins/PluginStorePage';
 import { GatewayModelsPage } from '@/features/gatewayModels/GatewayModelsPage';
 import { ConfigPage } from '@/features/config/ConfigPage';
 import { LogsPage } from '@/features/logs/LogsPage';
+import { MetricsPage } from '@/features/metrics/MetricsPage';
 import { SystemPage } from '@/pages/SystemPage';
 import { AccountPage } from '@/pages/AccountPage';
 import { useAuthStore } from '@/stores';
@@ -30,6 +31,7 @@ const createMainRoutes = (supportsPlugin: boolean) => [
   { path: '/oauth', element: <OAuthPage /> },
   { path: '/gateway-models', element: <GatewayModelsPage /> },
   { path: '/quota', element: <QuotaPage /> },
+  { path: '/metrics', element: <MetricsPage /> },
   ...(supportsPlugin
     ? [
         { path: '/plugin-pages/:pluginId/:menuIndex', element: <PluginResourcePage /> },

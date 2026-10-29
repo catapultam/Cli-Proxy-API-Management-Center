@@ -26,6 +26,7 @@ import {
   IconModelCluster,
   IconSidebarDashboard,
   IconSidebarLogs,
+  IconSidebarMetrics,
   IconSidebarOauth,
   IconSidebarPlugins,
   IconSidebarProviders,
@@ -67,6 +68,7 @@ const sidebarIcons: Record<string, ReactNode> = {
   pluginStore: <IconSidebarStore size={18} />,
   config: <IconSidebarConfig size={18} />,
   logs: <IconSidebarLogs size={18} />,
+  metrics: <IconSidebarMetrics size={18} />,
   system: <IconSidebarSystem size={18} />,
   account: <IconShield size={18} />,
 };
@@ -682,6 +684,12 @@ export function MainLayout() {
           labelKey: 'nav.quota_management',
           metaKey: 'nav_meta.quota_management',
           icon: sidebarIcons.quota,
+        },
+        {
+          path: '/metrics',
+          labelKey: 'nav.metrics',
+          metaKey: 'nav_meta.metrics',
+          icon: sidebarIcons.metrics,
         },
         {
           path: '/logs',

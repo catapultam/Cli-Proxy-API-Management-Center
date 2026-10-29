@@ -127,7 +127,8 @@
     "config_management": "設定面板",
     "logs": "記錄檢視",
     "account": "帳戶與登入",
-    "system_info": "中心資訊"
+    "system_info": "中心資訊",
+    "metrics": "指標"
   },
   "nav_groups": {
     "operate": "運行",
@@ -148,7 +149,8 @@
     "logs": "請求追蹤與排查",
     "config_management": "閘道基礎設定",
     "account": "使用者名稱、密碼與通行金鑰",
-    "system_info": "運行與診斷資訊"
+    "system_info": "運行與診斷資訊",
+    "metrics": "用量分析"
   },
   "dashboard": {
     "hero_verdict_good": "運行平穩",
@@ -2310,5 +2312,13 @@
     "unavailable": "重置暫不可用。",
     "rate_limited": "請求過於頻繁。",
     "auth_error": "授權遭拒。"
+  },
+  "metrics": {
+    "title": "指標",
+    "description": "來自代理分析儀表板的用量分析。此檢視為唯讀，並為目前工作階段簽署，會自動續期。",
+    "frame_title": "代理用量分析儀表板",
+    "not_configured_title": "尚未設定指標儀表板",
+    "not_configured_desc": "請在代理伺服器上設定 USAGE_ANALYTICS_METABASE_URL、USAGE_ANALYTICS_METABASE_DASHBOARD_ID 和 USAGE_ANALYTICS_EMBED_SECRET_FILE，然後重新啟動服務。",
+    "load_failed": "無法載入指標儀表板"
   }
 }

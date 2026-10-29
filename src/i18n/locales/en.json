@@ -127,7 +127,8 @@
     "config_management": "Config Panel",
     "logs": "Logs Viewer",
     "account": "Account & Sign-in",
-    "system_info": "Management Center Info"
+    "system_info": "Management Center Info",
+    "metrics": "Metrics"
   },
   "nav_groups": {
     "operate": "Operate",
@@ -148,7 +149,8 @@
     "logs": "Request tracing",
     "config_management": "Gateway configuration",
     "account": "Username, password & passkeys",
-    "system_info": "Runtime & diagnostics"
+    "system_info": "Runtime & diagnostics",
+    "metrics": "Usage analytics"
   },
   "dashboard": {
     "hero_verdict_good": "All systems steady",
@@ -2286,5 +2288,13 @@
     "unavailable": "Resets are currently unavailable.",
     "rate_limited": "Request rate limited.",
     "auth_error": "Authorization was refused."
+  },
+  "metrics": {
+    "title": "Metrics",
+    "description": "Usage analytics from the proxy analytics dashboard. The view is read-only and signed for this session; it renews automatically.",
+    "frame_title": "Proxy usage analytics dashboard",
+    "not_configured_title": "Metrics dashboard is not configured",
+    "not_configured_desc": "Set USAGE_ANALYTICS_METABASE_URL, USAGE_ANALYTICS_METABASE_DASHBOARD_ID and USAGE_ANALYTICS_EMBED_SECRET_FILE on the proxy server, then restart it.",
+    "load_failed": "Could not load the metrics dashboard"
   }
 }

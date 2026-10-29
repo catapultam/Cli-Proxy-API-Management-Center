@@ -127,7 +127,8 @@
     "config_management": "Панель конфигурации",
     "logs": "Просмотр логов",
     "account": "Аккаунт и вход",
-    "system_info": "Информация системы"
+    "system_info": "Информация системы",
+    "metrics": "Метрики"
   },
   "nav_groups": {
     "operate": "Работа",
@@ -147,7 +148,8 @@
     "logs": "Трассировка запросов",
     "config_management": "Базовая конфигурация шлюза",
     "account": "Имя пользователя, пароль и passkeys",
-    "system_info": "Состояние и диагностика"
+    "system_info": "Состояние и диагностика",
+    "metrics": "Аналитика использования"
   },
   "dashboard": {
     "hero_verdict_good": "Всё стабильно",
@@ -2280,5 +2282,13 @@
     "unavailable": "Сбросы временно недоступны.",
     "rate_limited": "Слишком много запросов.",
     "auth_error": "Авторизация отклонена."
+  },
+  "metrics": {
+    "title": "Метрики",
+    "description": "Аналитика использования из панели аналитики прокси. Представление только для чтения, подписано для этого сеанса и обновляется автоматически.",
+    "frame_title": "Панель аналитики использования прокси",
+    "not_configured_title": "Панель метрик не настроена",
+    "not_configured_desc": "Задайте USAGE_ANALYTICS_METABASE_URL, USAGE_ANALYTICS_METABASE_DASHBOARD_ID и USAGE_ANALYTICS_EMBED_SECRET_FILE на сервере прокси и перезапустите его.",
+    "load_failed": "Не удалось загрузить панель метрик"
   }
 }

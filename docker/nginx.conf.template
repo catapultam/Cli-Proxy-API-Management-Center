@@ -13,17 +13,24 @@ server {
     # Credential and plugin uploads go through the proxy.
     client_max_body_size 64m;
 
+    # Clear a cached HSTS (a former HTTPS origin on this host) so the plain HTTP port works again.
+    proxy_hide_header Strict-Transport-Security;
+    add_header Strict-Transport-Security "max-age=0" always;
+
     location = / {
         add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=0" always;
         try_files /index.html =404;
     }
 
     location = /index.html {
         add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=0" always;
     }
 
     location = /management.html {
         add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=0" always;
     }
 
     location / {
@@ -33,6 +40,43 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+}
+
+# Metabase behind Tailscale Serve HTTPS. Publish this port on loopback only.
+server {
+    listen 8081;
+    listen [::]:8081;
+    server_name _;
+
+    # Error-level lines log request URIs with signed tokens; status codes still show failures.
+    access_log off;
+    error_log /var/log/nginx/error.log crit;
+
+    client_max_body_size 64m;
+
+    # Docker DNS at request time, so a missing Metabase does not stop nginx startup.
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    set $metabase_backend ${CPA_METABASE_BACKEND};
+
+    # Do not let Metabase pin HSTS on this host; that breaks the plain HTTP UI port.
+    proxy_hide_header Strict-Transport-Security;
+    add_header Strict-Transport-Security "max-age=0" always;
+
+    location / {
+        proxy_pass $metabase_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_buffering off;

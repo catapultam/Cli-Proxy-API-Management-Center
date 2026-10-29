@@ -2315,7 +2315,7 @@
   },
   "metrics": {
     "title": "指標",
-    "description": "來自代理分析儀表板的用量分析。此檢視為唯讀，並為目前工作階段簽署，會自動續期。",
+    "description": "將請求數和權杖數與每個帳號回報的用量進行比較。同一時段內用量增加後才會顯示比率。",
     "frame_title": "代理用量分析儀表板",
     "not_configured_title": "尚未設定指標儀表板",
     "not_configured_desc": "請在代理伺服器上設定 USAGE_ANALYTICS_METABASE_URL、USAGE_ANALYTICS_METABASE_DASHBOARD_ID 和 USAGE_ANALYTICS_EMBED_SECRET_FILE，然後重新啟動服務。",

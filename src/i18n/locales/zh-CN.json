@@ -2289,7 +2289,7 @@
   },
   "metrics": {
     "title": "指标",
-    "description": "来自代理分析仪表板的用量分析。此视图为只读，并为当前会话签名，会自动续期。",
+    "description": "将请求数和令牌数与每个账号报告的用量进行比较。同一窗口内用量增加后才会显示比率。",
     "frame_title": "代理用量分析仪表板",
     "not_configured_title": "尚未配置指标仪表板",
     "not_configured_desc": "请在代理服务器上设置 USAGE_ANALYTICS_METABASE_URL、USAGE_ANALYTICS_METABASE_DASHBOARD_ID 和 USAGE_ANALYTICS_EMBED_SECRET_FILE，然后重启服务。",

@@ -2291,7 +2291,7 @@
   },
   "metrics": {
     "title": "Metrics",
-    "description": "Usage analytics from the proxy analytics dashboard. The view is read-only and signed for this session; it renews automatically.",
+    "description": "Compare requests and tokens with each account’s reported usage. Ratios appear after usage increases within the same window.",
     "frame_title": "Proxy usage analytics dashboard",
     "not_configured_title": "Metrics dashboard is not configured",
     "not_configured_desc": "Set USAGE_ANALYTICS_METABASE_URL, USAGE_ANALYTICS_METABASE_DASHBOARD_ID and USAGE_ANALYTICS_EMBED_SECRET_FILE on the proxy server, then restart it.",

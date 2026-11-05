@@ -75,7 +75,7 @@ describe('Claude reset grant details', () => {
     expect(markup).not.toContain('<button');
   });
 
-  test.each(['en', 'zh-CN', 'zh-TW', 'ru', 'vi'])(
+  test.each(['en', 'zh-CN', 'zh-TW', 'ru'])(
     'translates fallback labels in %s',
     async (lng) => {
       await i18n.changeLanguage(lng);

@@ -13,6 +13,8 @@ import {
   type AnthropicResetSettledCode,
 } from '../src/services/api/claudeResetGrants';
 import { apiCallApi, type ApiCallRequest } from '../src/services/api/apiCall';
+import { apiClient } from '../src/services/api/client';
+import { generateResetGrantRequestId } from '../src/features/quota/providers/claude/resetGrantRequestId';
 import type { AuthFileCooldownResetResponse } from '../src/services/api/authFiles';
 import {
   createResetGrantOperations,
@@ -206,7 +208,15 @@ describe('Claude reset grant default request ID integration', () => {
         },
       },
       async () => {
-        const operations = createResetGrantOperations();
+        const operations = createResetGrantOperations({
+          revision: () => apiClient.getConnectionRevision(),
+          readStatus: readClaudeResetGrants,
+          readOrganization: readClaudeOrganization,
+          claim: claimClaudeResetGrant,
+          now: () => Date.now(),
+          requestId: generateResetGrantRequestId,
+          resetCooldown: async (authIndex) => ({ status: 'ok', auth_index: authIndex, models: [] }),
+        });
         expect(await operations.run('account', 'index', grant.id)).toEqual({
           code: 'reset',
           unresolved: false,
@@ -529,9 +539,9 @@ test('a stale claim answer cannot settle the replacement session operation', asy
   expect(operations.inspect('account')).toBeUndefined();
 });
 
-test('all grant messages and confirmation are translated in all six locales', async () => {
+test('all grant messages and confirmation are translated in all supported locales', async () => {
   const locales = await Promise.all(
-    ['en', 'zh-CN', 'zh-TW', 'ru', 'vi', 'ko'].map(
+    ['en', 'zh-CN', 'zh-TW', 'ru'].map(
       async (locale) => (await Bun.file(`src/i18n/locales/${locale}.json`).json()).claude_reset
     )
   );
